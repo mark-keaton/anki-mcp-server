@@ -22,6 +22,10 @@ import {
 
 import { YankiConnect } from "yanki-connect";
 const client = new YankiConnect();
+const cardIds = await client.card.findCards({
+  query: "deck:current"
+});
+const cards = await client.card.cardsInfo({cards: cardIds});
 
 /**
  * Type alias for a note object.
@@ -64,12 +68,12 @@ const server = new Server(
  */
 server.setRequestHandler(ListResourcesRequestSchema, async () => {
   return {
-    resources: Object.entries(notes).map(([id, note]) => ({
-      uri: `note:///${id}`,
+    resources: [{
+      uri: `anki://currentdeck`,
       mimeType: "text/plain",
-      name: note.title,
-      description: `A text note: ${note.title}`
-    }))
+      name: "Current Deck",
+      description: "Current Anki deck"
+    }]
   };
 });
 
@@ -79,21 +83,17 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
  */
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const url = new URL(request.params.uri);
-  const id = url.pathname.replace(/^\//, '');
-  const note = notes[id];
-
-  if (!note) {
-    throw new Error(`Note ${id} not found`);
-  }
 
   return {
     contents: [{
       uri: request.params.uri,
       mimeType: "text/plain",
-      text: note.content
+      text: JSON.stringify(cards)
     }]
   };
 });
+
+
 
 /**
  * Handler that lists available tools.
@@ -120,6 +120,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["title", "content"]
         }
       },
+      {
+        name: "update_card",
+        description: "After the user answers a card you've quizzed them on, use this tool to mark it answered and update its ease",
+        inputSchema: {
+          type: "object",
+          properties: {
+            cardId: {
+              type: "string",
+              description: "Id of the card to answer"
+            },
+            ease: {
+              type: "string",
+              description: "Ease of the card between 1 (Again) and 4 (Easy)"
+            }
+          },
+          required: ["cardId", "ease"]
+        }
+      }
     ]
   };
 });
@@ -144,6 +162,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         content: [{
           type: "text",
           text: `Created note ${id}: ${title}`
+        }]
+      };
+    }
+
+    case "update_card": {
+      const cardId = Number(request.params.arguments?.cardId);
+      const ease = Number(request.params.arguments?.ease);
+      const result = await client.card.answerCards({answers: [{cardId, ease}]});
+
+
+
+      return {
+        content: [{
+          type: "text",
+          text: `${result} Updated card ${cardId} with ease ${ease}`
         }]
       };
     }
