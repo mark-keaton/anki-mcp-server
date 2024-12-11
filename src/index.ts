@@ -20,6 +20,9 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
+import { YankiConnect } from "yanki-connect";
+const client = new YankiConnect();
+
 /**
  * Type alias for a note object.
  */
