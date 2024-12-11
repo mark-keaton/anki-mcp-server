@@ -17,7 +17,8 @@
     "inspector": "npx @modelcontextprotocol/inspector build/index.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.0.3"
+    "@modelcontextprotocol/sdk": "1.0.3",
+    "yanki-connect": "^2.1.8"
   },
   "devDependencies": {
     "@types/node": "^20.11.24",
