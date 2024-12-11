@@ -1,6 +1,6 @@
-# viem-server MCP Server
+# anki-server MCP Server
 
-An MCP for viem
+An MCP for Anki 
 
 This is a TypeScript-based MCP server that implements a simple notes system. It demonstrates core MCP concepts by providing:
 
@@ -52,8 +52,8 @@ On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
 ```json
 {
   "mcpServers": {
-    "viem-server": {
-      "command": "/path/to/viem-server/build/index.js"
+    "anki-server": {
+      "command": "/path/to/anki-server/build/index.js"
     }
   }
 }
