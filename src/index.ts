@@ -25,7 +25,11 @@ const client = new YankiConnect();
 const cardIds = await client.card.findCards({
   query: "deck:current"
 });
-const cards = await client.card.cardsInfo({cards: cardIds});
+const cards = (await client.card.cardsInfo({cards: cardIds})).map(card => ({
+  cardId: card.cardId,
+  question: card.question,
+  answer: card.answer
+}));
 
 /**
  * Type alias for a note object.
