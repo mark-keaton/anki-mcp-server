@@ -171,12 +171,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const ease = Number(request.params.arguments?.ease);
       const result = await client.card.answerCards({answers: [{cardId, ease}]});
 
-
+      if (result.includes(false)) {
+        throw new Error(`Failed to update card ${cardId}`);
+      }
+      console.error(`Updated card ${cardId} with ease ${ease}`);
 
       return {
         content: [{
           type: "text",
-          text: `${result} Updated card ${cardId} with ease ${ease}`
+          text: `Updated card ${cardId} with ease ${ease}`
         }]
       };
     }
