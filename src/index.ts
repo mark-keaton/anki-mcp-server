@@ -1,14 +1,5 @@
 #!/usr/bin/env node
 
-/**
- * This is a template MCP server that implements a simple notes system.
- * It demonstrates core MCP concepts like resources and tools by allowing:
- * - Listing notes as resources
- * - Reading individual notes
- * - Creating new notes via a tool
- * - Summarizing all notes via a prompt
- */
-
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -22,28 +13,13 @@ import {
 
 import { YankiConnect } from "yanki-connect";
 const client = new YankiConnect();
-const cardIds = await client.card.findCards({
-  query: "deck:current"
-});
-const cards = (await client.card.cardsInfo({cards: cardIds})).map(card => ({
-  cardId: card.cardId,
-  question: card.question,
-  answer: card.answer
-}));
 
-/**
- * Type alias for a note object.
- */
-type Note = { title: string, content: string };
-
-/**
- * Simple in-memory storage for notes.
- * In a real implementation, this would likely be backed by a database.
- */
-const notes: { [id: string]: Note } = {
-  "1": { title: "First Note", content: "This is note 1" },
-  "2": { title: "Second Note", content: "This is note 2" }
-};
+interface Card {
+  cardId: number;
+  question: string;
+  answer: string;
+  due: number;
+}
 
 /**
  * Create an MCP server with capabilities for resources (to list/read notes),
@@ -58,7 +34,6 @@ const server = new Server(
     capabilities: {
       resources: {},
       tools: {},
-      prompts: {},
     },
   }
 );
@@ -72,12 +47,26 @@ const server = new Server(
  */
 server.setRequestHandler(ListResourcesRequestSchema, async () => {
   return {
-    resources: [{
-      uri: `anki://currentdeck`,
-      mimeType: "text/plain",
-      name: "Current Deck",
-      description: "Current Anki deck"
-    }]
+    resources: [
+      {
+        uri: "anki://search/deckcurrent",
+        mimeType: "application/json",
+        name: "Current Deck",
+        description: "Current Anki deck"
+      },
+      {
+        uri: "anki://search/isdue",
+        mimeType: "application/json",
+        name: "Due cards",
+        description: "Cards in review and learning waiting to be studied"
+      },
+      {
+        uri: "anki://search/isnew",
+        mimiType: "application/json",
+        name: "New cards",
+        description: "All unseen cards"
+      }
+    ]
   };
 });
 
@@ -87,59 +76,88 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
  */
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const url = new URL(request.params.uri);
+  const query = url.pathname.split("/").pop();
+  if (!query) {
+    throw new Error("Invalid resource URI");
+  }
+
+  const cardIds = await client.card.findCards({
+    query: formatQuery(query)
+  });
+  const cards: Card[] = (await client.card.cardsInfo({cards: cardIds})).map(card => ({
+    cardId: card.cardId,
+    question: cleanWithRegex(card.question),
+    answer: cleanWithRegex(card.answer),
+    due: card.due
+  })).sort((a: Card, b: Card) => a.due - b.due);
 
   return {
     contents: [{
       uri: request.params.uri,
-      mimeType: "text/plain",
+      mimeType: "application/json",
       text: JSON.stringify(cards)
     }]
   };
 });
 
+function formatQuery(query: string): string {
+  if (query.startsWith("deck")) {
+    return `deck:${query.slice(4)}`;
+  }
+  if (query.startsWith("is")) {
+    return `is:${query.slice(2)}`;
+  }
+  return query;
+}
 
-
+// Strip away formatting that isn't necessary
+function cleanWithRegex(htmlString: string): string {
+  return htmlString
+    // Remove style tags and their content
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    // Remove all HTML tags
+    .replace(/<[^>]+>/g, ' ')
+    // Remove anki play tags
+    .replace(/\[anki:play:[^\]]+\]/g, '')
+    // Convert HTML entities
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    // Clean up whitespace
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 /**
  * Handler that lists available tools.
- * Exposes a single "create_note" tool that lets clients create new notes.
  */
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
-        name: "create_note",
-        description: "Create a new note",
+        name: "update_cards",
+        description: "After the user answers cards you've quizzed them on, use this tool to mark them answered and update their ease",
         inputSchema: {
           type: "object",
           properties: {
-            title: {
-              type: "string",
-              description: "Title of the note"
-            },
-            content: {
-              type: "string",
-              description: "Text content of the note"
+            answers: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  cardId: {
+                    type: "number",
+                    description: "Id of the card to answer"
+                  },
+                  ease: {
+                    type: "number",
+                    description: "Ease of the card between 1 (Again) and 4 (Easy)"
+                  }
+                }
+              }
             }
           },
-          required: ["title", "content"]
-        }
-      },
-      {
-        name: "update_card",
-        description: "After the user answers a card you've quizzed them on, use this tool to mark it answered and update its ease",
-        inputSchema: {
-          type: "object",
-          properties: {
-            cardId: {
-              type: "string",
-              description: "Id of the card to answer"
-            },
-            ease: {
-              type: "string",
-              description: "Ease of the card between 1 (Again) and 4 (Easy)"
-            }
-          },
-          required: ["cardId", "ease"]
         }
       }
     ]
@@ -147,43 +165,34 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 });
 
 /**
- * Handler for the create_note tool.
- * Creates a new note with the provided title and content, and returns success message.
+ * Handler for the update_cards tool.
  */
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  switch (request.params.name) {
-    case "create_note": {
-      const title = String(request.params.arguments?.title);
-      const content = String(request.params.arguments?.content);
-      if (!title || !content) {
-        throw new Error("Title and content are required");
-      }
+  const { name, arguments: args } = request.params;
 
-      const id = String(Object.keys(notes).length + 1);
-      notes[id] = { title, content };
+  if (!args) {
+    throw new Error(`No arguments provided for tool: ${name}`);
+  }
+
+  switch (name) {
+    case "update_cards": {
+      const answers = args.answers as { cardId: number; ease: number }[];
+      const result = await client.card.answerCards({ answers: answers });
+
+      const successfulCards = answers
+        .filter((_, index) => result[index])
+        .map(card => card.cardId);
+      const failedCards = answers.filter((_, index) => !result[index]);
+
+      if (failedCards.length > 0) {
+        const failedCardIds = failedCards.map(card => card.cardId);
+        throw new Error(`Failed to update cards with IDs: ${failedCardIds.join(', ')}`);
+      }
 
       return {
         content: [{
           type: "text",
-          text: `Created note ${id}: ${title}`
-        }]
-      };
-    }
-
-    case "update_card": {
-      const cardId = Number(request.params.arguments?.cardId);
-      const ease = Number(request.params.arguments?.ease);
-      const result = await client.card.answerCards({answers: [{cardId, ease}]});
-
-      if (result.includes(false)) {
-        throw new Error(`Failed to update card ${cardId}`);
-      }
-      console.error(`Updated card ${cardId} with ease ${ease}`);
-
-      return {
-        content: [{
-          type: "text",
-          text: `Updated card ${cardId} with ease ${ease}`
+          text: `Updated cards ${successfulCards.join(", ")}`
         }]
       };
     }
@@ -191,63 +200,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     default:
       throw new Error("Unknown tool");
   }
-});
-
-/**
- * Handler that lists available prompts.
- * Exposes a single "summarize_notes" prompt that summarizes all notes.
- */
-server.setRequestHandler(ListPromptsRequestSchema, async () => {
-  return {
-    prompts: [
-      {
-        name: "summarize_notes",
-        description: "Summarize all notes",
-      }
-    ]
-  };
-});
-
-/**
- * Handler for the summarize_notes prompt.
- * Returns a prompt that requests summarization of all notes, with the notes' contents embedded as resources.
- */
-server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-  if (request.params.name !== "summarize_notes") {
-    throw new Error("Unknown prompt");
-  }
-
-  const embeddedNotes = Object.entries(notes).map(([id, note]) => ({
-    type: "resource" as const,
-    resource: {
-      uri: `note:///${id}`,
-      mimeType: "text/plain",
-      text: note.content
-    }
-  }));
-
-  return {
-    messages: [
-      {
-        role: "user",
-        content: {
-          type: "text",
-          text: "Please summarize the following notes:"
-        }
-      },
-      ...embeddedNotes.map(note => ({
-        role: "user" as const,
-        content: note
-      })),
-      {
-        role: "user",
-        content: {
-          type: "text",
-          text: "Provide a concise summary of all the notes above."
-        }
-      }
-    ]
-  };
 });
 
 /**
