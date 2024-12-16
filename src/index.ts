@@ -14,6 +14,42 @@ import {
 import { YankiConnect } from "yanki-connect";
 const client = new YankiConnect();
 
+/**
+ * Prompt based on article by Andy Matuschak:
+ * How to write good prompts: using spaced repetition to create understanding
+ * December 2020
+ * https://andymatuschak.org/prompts/
+ */
+const HIGH_QUALITY_CARDS_PROMPT = `
+When using the add_card tool, please create high-quality Anki cards following Andy Matuschak's principles for effective retrieval practice:
+
+1. Make each card focused on a single, precise piece of information. Write more focused cards rather than trying to economize by combining concepts.
+
+2. For each concept, create cards exploring:
+- Core attributes and properties
+- Relations and differences with similar concepts
+- Causes and effects
+- Practical applications
+- Common misconceptions
+- Real-world examples
+
+3. Create explanatory cards building understanding, not just definitions. Focus on why and how.
+
+4. For lists:
+- Closed lists: Individual cards for each item
+- Open lists: Focus on patterns and relationships
+- Use fill-in-the-blank for ordered lists
+- Add explanation prompts when useful
+
+5. Each card should have:
+- Clear, unambiguous questions ensuring consistent retrieval
+- Focused, precise answers
+- Cues and elaborative encoding when helpful
+- Mnemonics for arbitrary information
+
+6. Include "salience prompts" to keep important ideas top of mind and connect theory to practice.
+`;
+
 interface Card {
   cardId: number;
   question: string;
@@ -22,8 +58,8 @@ interface Card {
 }
 
 /**
- * Create an MCP server with capabilities for resources (to list/read notes),
- * tools (to create new notes), and prompts (to summarize notes).
+ * Create an MCP server with capabilities for resources (to get Anki cards),
+ * tools (to answer cards and create new cards), and prompts (for creating high quality cards).
  */
 const server = new Server(
   {
@@ -34,16 +70,17 @@ const server = new Server(
     capabilities: {
       resources: {},
       tools: {},
+      prompts: {},
     },
   }
 );
 
 /**
- * Handler for listing available notes as resources.
- * Each note is exposed as a resource with:
- * - A note:// URI scheme
- * - Plain text MIME type
- * - Human readable name and description (now including the note title)
+ * Handler for listing Anki cards as resources.
+ * Cards are exposed as a resource with:
+ * - An anki:// URI scheme plus a filter
+ * - JSON MIME type
+ * - All resources return a list of cards under different filters
  */
 server.setRequestHandler(ListResourcesRequestSchema, async () => {
   return {
@@ -71,8 +108,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
 });
 
 /**
- * Handler for reading the contents of a specific note.
- * Takes a note:// URI and returns the note content as plain text.
+ * Filters Anki cards based on selected resource
  */
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const url = new URL(request.params.uri);
@@ -100,6 +136,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   };
 });
 
+// Formats the uri to be a proper query
 function formatQuery(query: string): string {
   if (query.startsWith("deck")) {
     return `deck:${query.slice(4)}`;
@@ -183,7 +220,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 });
 
 /**
- * Handler for the update_cards tool.
+ * Handler for the update_cards and add_card tools.
  */
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
@@ -243,6 +280,46 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     default:
       throw new Error("Unknown tool");
+  }
+});
+
+/**
+ * Handler that lists available prompts
+ */
+server.setRequestHandler(ListPromptsRequestSchema, async () => {
+  return {
+    prompts: [
+      {
+        name: "high_quality_cards_prompt",
+        description: "A prompt for instructing the AI how to create high-quality cards",
+      },
+    ],
+  };
+});
+
+/**
+ * Handler for getting prompts
+ */
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  const { name, arguments: args } = request.params;
+
+  switch (name) {
+    case "high_quality_cards_prompt": {
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: HIGH_QUALITY_CARDS_PROMPT,
+            },
+          }
+        ],
+      };
+    }
+
+    default:
+      throw new Error("Unknown prompt");
   }
 });
 
