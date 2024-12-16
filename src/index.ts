@@ -159,6 +159,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             }
           },
         }
+      },
+      {
+        name: "add_card",
+        description: "Create a new flashcard in Anki for the user",
+        inputSchema: {
+          type: "object",
+          properties: {
+            front: {
+              type: "string",
+              description: "The front of the card"
+            },
+            back: {
+              type: "string",
+              description: "The back of the card"
+            }
+          },
+          required: ["front", "back"]
+        }
       }
     ]
   };
@@ -193,6 +211,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         content: [{
           type: "text",
           text: `Updated cards ${successfulCards.join(", ")}`
+        }]
+      };
+    }
+
+    case "add_card": {
+      const front = String(args.front);
+      const back = String(args.back);
+
+      const note = {
+        note: {
+          deckName: 'Default',
+          fields: {
+            Back: back,
+            Front: front,
+          },
+          modelName: 'Basic',
+        },
+      };
+
+      const noteId = await client.note.addNote(note);
+      const cardId = (await client.card.findCards({ query: `nid:${noteId}` }))[0];
+
+      return {
+        content: [{
+          type: "text",
+          text: `Created card with id ${cardId}`
         }]
       };
     }
