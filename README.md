@@ -2,6 +2,8 @@
 
 An MCP server implementation that connects to a locally running Anki, providing card review and creation.
 
+This server is designed to work with the [Anki desktop app](https://apps.ankiweb.net/) and the [Anki-Connect](https://foosoft.net/projects/anki-connect/) add-on.
+
 ## Resources
 - **anki://search/deckcurrent**
   - Returns all cards from current deck
@@ -48,8 +50,6 @@ npm run watch
 ```
 
 ## Configuration 
-
-Requires the [Anki desktop app](https://apps.ankiweb.net/) with the [Anki-Connect](https://foosoft.net/projects/anki-connect/) add-on to work.
 
 To use with Claude Desktop, add the server config:
 
