@@ -7,48 +7,10 @@ import {
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
-  ListPromptsRequestSchema,
-  GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { YankiConnect } from "yanki-connect";
 const client = new YankiConnect();
-
-/**
- * Prompt based on article by Andy Matuschak:
- * How to write good prompts: using spaced repetition to create understanding
- * December 2020
- * https://andymatuschak.org/prompts/
- */
-const HIGH_QUALITY_CARDS_PROMPT = `
-When using the add_card tool, please create high-quality Anki cards following Andy Matuschak's principles for effective retrieval practice:
-
-1. Make each card focused on a single, precise piece of information. Write more focused cards rather than trying to economize by combining concepts.
-
-2. For each concept, create cards exploring:
-- Core attributes and properties
-- Relations and differences with similar concepts
-- Causes and effects
-- Practical applications
-- Common misconceptions
-- Real-world examples
-
-3. Create explanatory cards building understanding, not just definitions. Focus on why and how.
-
-4. For lists:
-- Closed lists: Individual cards for each item
-- Open lists: Focus on patterns and relationships
-- Use fill-in-the-blank for ordered lists
-- Add explanation prompts when useful
-
-5. Each card should have:
-- Clear, unambiguous questions ensuring consistent retrieval
-- Focused, precise answers
-- Cues and elaborative encoding when helpful
-- Mnemonics for arbitrary information
-
-6. Include "salience prompts" to keep important ideas top of mind and connect theory to practice.
-`;
 
 interface Card {
   cardId: number;
@@ -120,7 +82,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const cardIds = await client.card.findCards({
     query: formatQuery(query)
   });
-  const cards: Card[] = (await client.card.cardsInfo({cards: cardIds})).map(card => ({
+  const cards: Card[] = (await client.card.cardsInfo({ cards: cardIds })).map(card => ({
     cardId: card.cardId,
     question: cleanWithRegex(card.question),
     answer: cleanWithRegex(card.answer),
@@ -280,46 +242,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     default:
       throw new Error("Unknown tool");
-  }
-});
-
-/**
- * Handler that lists available prompts
- */
-server.setRequestHandler(ListPromptsRequestSchema, async () => {
-  return {
-    prompts: [
-      {
-        name: "high_quality_cards_prompt",
-        description: "A prompt for instructing the AI how to create high-quality cards",
-      },
-    ],
-  };
-});
-
-/**
- * Handler for getting prompts
- */
-server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
-
-  switch (name) {
-    case "high_quality_cards_prompt": {
-      return {
-        messages: [
-          {
-            role: "user",
-            content: {
-              type: "text",
-              text: HIGH_QUALITY_CARDS_PROMPT,
-            },
-          }
-        ],
-      };
-    }
-
-    default:
-      throw new Error("Unknown prompt");
   }
 });
 
