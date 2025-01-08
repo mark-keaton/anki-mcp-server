@@ -79,6 +79,19 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     throw new Error("Invalid resource URI");
   }
 
+  const cards = await findCardsAndOrder(query);
+
+  return {
+    contents: [{
+      uri: request.params.uri,
+      mimeType: "application/json",
+      text: JSON.stringify(cards)
+    }]
+  };
+});
+
+// Returns a list of cards ordered by due date
+async function findCardsAndOrder(query: string): Promise<Card[]> {
   const cardIds = await client.card.findCards({
     query: formatQuery(query)
   });
@@ -89,14 +102,8 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     due: card.due
   })).sort((a: Card, b: Card) => a.due - b.due);
 
-  return {
-    contents: [{
-      uri: request.params.uri,
-      mimeType: "application/json",
-      text: JSON.stringify(cards)
-    }]
-  };
-});
+  return cards;
+}
 
 // Formats the uri to be a proper query
 function formatQuery(query: string): string {
@@ -114,6 +121,8 @@ function cleanWithRegex(htmlString: string): string {
   return htmlString
     // Remove style tags and their content
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    // Replce divs with newlines
+    .replace(/<div[^>]*>/g, '\n')
     // Remove all HTML tags
     .replace(/<[^>]+>/g, ' ')
     // Remove anki play tags
@@ -124,9 +133,11 @@ function cleanWithRegex(htmlString: string): string {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
-    // Clean up whitespace
-    .replace(/\s+/g, ' ')
-    .trim();
+    // Clean up whitespace but preserve newlines
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0)
+    .join('\n');
 }
 /**
  * Handler that lists available tools.
@@ -176,6 +187,34 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ["front", "back"]
         }
+      },
+      {
+        name: "get_due_cards",
+        description: "Returns a given number (num) of cards due for review.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            num: {
+              type: "number",
+              description: "Number of due cards to get"
+            }
+          },
+          required: ["num"]
+        },
+      },
+      {
+        name: "get_new_cards",
+        description: "Returns a given number (num) of new and unseen cards.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            num: {
+              type: "number",
+              description: "Number of new cards to get"
+            }
+          },
+          required: ["num"]
+        },
       }
     ]
   };
@@ -240,6 +279,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
+    case "get_due_cards": {
+      const num = Number(args.num);
+
+      const cards = await findCardsAndOrder("is:due");
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(cards.slice(0, num))
+        }]
+      };
+    }
+
+    case "get_new_cards": {
+      const num = Number(args.num);
+
+      const cards = await findCardsAndOrder("is:new");
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(cards.slice(0, num))
+        }]
+      };
+    }
     default:
       throw new Error("Unknown tool");
   }
