@@ -1,8 +1,9 @@
 {
-  "name": "anki-server",
-  "version": "0.1.0",
-  "description": "An MCP for anki",
-  "private": true,
+  "name": "@scorzeth/anki-mcp-server",
+  "version": "1.0.0",
+  "description": "An MCP server for giving Claude access to your Anki",
+  "license": "MIT",
+  "author": "Scott Orzech & Wai Son Wong",
   "type": "module",
   "bin": {
     "anki-server": "./build/index.js"

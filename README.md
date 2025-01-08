@@ -4,6 +4,8 @@ An MCP server implementation that connects to a locally running Anki, providing 
 
 This server is designed to work with the [Anki desktop app](https://apps.ankiweb.net/) and the [Anki-Connect](https://foosoft.net/projects/anki-connect/) add-on.
 
+Make sure you have the add-on installed before using.
+
 ## Resources
 - **anki://search/deckcurrent**
   - Returns all cards from current deck
@@ -27,10 +29,15 @@ This server is designed to work with the [Anki desktop app](https://apps.ankiweb
     - `front` (string): Front of card
     - `back` (string): Back of card
 
-## Prompts
-- **high_quality_cards_prompt**
-  - Prompt with guidelines for creating high-quality cards
-  - Based on Andy Matuschak's [How to write good prompts](https://andymatuschak.org/prompts/)
+- **get_due_cards**
+  - Returns n number of cards currently due for review
+  - Inputs:
+    - `num` (number): Number of cards
+
+- **get_new_cards**
+  - Returns n number of cards from new
+  - Inputs:
+    - `num` (number): Number of cards
 
 ## Development
 
@@ -59,8 +66,8 @@ On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
 ```json
 {
   "mcpServers": {
-    "anki-server": {
-      "command": "/path/to/anki-server/build/index.js"
+    "anki-mcp-server": {
+      "command": "/path/to/anki-mcp-server/build/index.js"
     }
   }
 }
