@@ -1,7 +1,7 @@
 {
   "name": "@scorzeth/anki-mcp-server",
   "version": "1.0.0",
-  "description": "An MCP server for giving Claude access to your Anki",
+  "description": "An MCP server for interacting with your Anki",
   "license": "MIT",
   "author": "Scott Orzech & Wai Son Wong",
   "type": "module",
