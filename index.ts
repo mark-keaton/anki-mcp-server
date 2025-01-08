@@ -21,7 +21,7 @@ interface Card {
 
 /**
  * Create an MCP server with capabilities for resources (to get Anki cards),
- * tools (to answer cards and create new cards), and prompts (for creating high quality cards).
+ * and tools (to answer cards, create new cards and get cards).
  */
 const server = new Server(
   {
@@ -32,7 +32,6 @@ const server = new Server(
     capabilities: {
       resources: {},
       tools: {},
-      prompts: {},
     },
   }
 );
@@ -121,7 +120,7 @@ function cleanWithRegex(htmlString: string): string {
   return htmlString
     // Remove style tags and their content
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    // Replce divs with newlines
+    // Replace divs with newlines
     .replace(/<div[^>]*>/g, '\n')
     // Remove all HTML tags
     .replace(/<[^>]+>/g, ' ')
@@ -139,6 +138,7 @@ function cleanWithRegex(htmlString: string): string {
     .filter(line => line.length > 0)
     .join('\n');
 }
+
 /**
  * Handler that lists available tools.
  */
@@ -221,7 +221,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 });
 
 /**
- * Handler for the update_cards and add_card tools.
+ * Handler for the update_cards, add_card, get_due_cards and get_new_cards tools.
  */
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
@@ -304,6 +304,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }]
       };
     }
+
     default:
       throw new Error("Unknown tool");
   }
