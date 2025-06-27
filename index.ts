@@ -189,6 +189,45 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
+        name: "add_notes_batch",
+        description: "Create multiple notes/cards in a single efficient operation. Ideal for bulk content creation, imports, and automated card generation.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            notes: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  deckName: {
+                    type: "string",
+                    description: "Name of the deck to create the note in (default: 'Default')"
+                  },
+                  modelName: {
+                    type: "string",
+                    description: "Name of the note type/model to use (default: 'Basic')"
+                  },
+                  fields: {
+                    type: "object",
+                    description: "Object with field names as keys and content as values (e.g., {'Front': 'question', 'Back': 'answer'})"
+                  },
+                  tags: {
+                    type: "array",
+                    items: {
+                      type: "string"
+                    },
+                    description: "Array of tags to add to the note (optional)"
+                  }
+                },
+                required: ["fields"]
+              },
+              description: "Array of note objects to create"
+            }
+          },
+          required: ["notes"]
+        }
+      },
+      {
         name: "get_due_cards",
         description: "Returns a given number (num) of cards due for review.",
         inputSchema: {
@@ -1013,6 +1052,75 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           text: `Created card with id ${cardId}`
         }]
       };
+    }
+
+    case "add_notes_batch": {
+      try {
+        const notes = args.notes as Array<{
+          deckName?: string;
+          modelName?: string;
+          fields: Record<string, string>;
+          tags?: string[];
+        }>;
+
+        if (!Array.isArray(notes) || notes.length === 0) {
+          throw new Error("Notes array must be provided with at least one note");
+        }
+
+        // Validate and format notes for the API
+        const formattedNotes = notes.map((note, index) => {
+          if (!note.fields || Object.keys(note.fields).length === 0) {
+            throw new Error(`Note at index ${index} must have at least one field`);
+          }
+
+          return {
+            deckName: note.deckName || 'Default',
+            modelName: note.modelName || 'Basic',
+            fields: note.fields,
+            tags: note.tags || []
+          };
+        });
+
+        // Use AnkiConnect's addNotes (plural) for batch creation
+        const noteIds = await client.note.addNotes({ notes: formattedNotes });
+
+        if (!noteIds) {
+          throw new Error("Failed to create notes - no response from AnkiConnect");
+        }
+
+        // Analyze results
+        const successfulNotes = noteIds.filter(id => id !== null);
+        const failedNotes = noteIds.map((id, index) => ({ index, id })).filter(item => item.id === null);
+
+        const results = noteIds.map((noteId, index) => ({
+          index: index,
+          success: noteId !== null,
+          note_id: noteId,
+          deck_name: formattedNotes[index].deckName,
+          model_name: formattedNotes[index].modelName,
+          field_count: Object.keys(formattedNotes[index].fields).length,
+          tag_count: formattedNotes[index].tags.length
+        }));
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              total_notes: notes.length,
+              successful_creations: successfulNotes.length,
+              failed_creations: failedNotes.length,
+              success_rate_percent: Math.round((successfulNotes.length / notes.length) * 100),
+              created_note_ids: successfulNotes,
+              failed_indices: failedNotes.map(f => f.index),
+              results: results,
+              message: `Successfully created ${successfulNotes.length} out of ${notes.length} notes`
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to create notes in batch. Make sure Anki is running, deck names exist, model names are correct, and field names match the model. Error: ${error}`);
+      }
     }
 
     case "get_due_cards": {
