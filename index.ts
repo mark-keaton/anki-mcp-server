@@ -748,6 +748,136 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             }
           }
         }
+      },
+      {
+        name: "list_models",
+        description: "Get all note types/models in the collection with optional detailed information",
+        inputSchema: {
+          type: "object",
+          properties: {
+            includeDetails: {
+              type: "boolean",
+              description: "Include detailed model information including fields and templates (default: false)"
+            }
+          }
+        }
+      },
+      {
+        name: "get_model_info",
+        description: "Get comprehensive information about specific models including fields, templates, and styling",
+        inputSchema: {
+          type: "object",
+          properties: {
+            modelNames: {
+              type: "array",
+              items: {
+                type: "string"
+              },
+              description: "Array of model names to get information for"
+            },
+            modelName: {
+              type: "string",
+              description: "Single model name (alternative to modelNames array)"
+            }
+          }
+        }
+      },
+      {
+        name: "get_model_fields",
+        description: "Get field definitions and properties for specific models",
+        inputSchema: {
+          type: "object",
+          properties: {
+            modelNames: {
+              type: "array",
+              items: {
+                type: "string"
+              },
+              description: "Array of model names to get field information for"
+            },
+            modelName: {
+              type: "string",
+              description: "Single model name (alternative to modelNames array)"
+            },
+            includeProperties: {
+              type: "boolean",
+              description: "Include detailed field properties like fonts, sizes, descriptions (default: false)"
+            }
+          }
+        }
+      },
+      {
+        name: "create_model",
+        description: "Create a new note type with custom fields and templates. Supports both basic and cloze deletion models.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            modelName: {
+              type: "string",
+              description: "Name for the new model (must be unique)"
+            },
+            fields: {
+              type: "array",
+              items: {
+                type: "string"
+              },
+              description: "Array of field names for the model (e.g., ['Front', 'Back', 'Extra'])"
+            },
+            templates: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  name: {
+                    type: "string",
+                    description: "Template name (e.g., 'Card 1')"
+                  },
+                  front: {
+                    type: "string",
+                    description: "Front template HTML (e.g., '{{Front}}')"
+                  },
+                  back: {
+                    type: "string",
+                    description: "Back template HTML (e.g., '{{FrontSide}}<hr>{{Back}}')"
+                  }
+                },
+                required: ["name", "front", "back"]
+              },
+              description: "Array of card templates"
+            },
+            css: {
+              type: "string",
+              description: "CSS styling for the model (optional, uses default if not provided)"
+            },
+            isCloze: {
+              type: "boolean",
+              description: "Create as cloze deletion model (default: false)"
+            }
+          },
+          required: ["modelName", "fields", "templates"]
+        }
+      },
+      {
+        name: "update_model_templates",
+        description: "Update card templates and styling for existing models",
+        inputSchema: {
+          type: "object",
+          properties: {
+            modelName: {
+              type: "string",
+              description: "Name of the model to update"
+            },
+            templates: {
+              type: "object",
+              description: "Templates to update, with template names as keys and template objects as values"
+            },
+            css: {
+              type: "string",
+              description: "New CSS styling for the model (optional)"
+            }
+          },
+          required: ["modelName"]
+        }
       }
     ]
   };
@@ -1993,6 +2123,321 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       } catch (error) {
         throw new Error(`Failed to get card intervals. Make sure Anki is running and card IDs are valid. Error: ${error}`);
+      }
+    }
+
+    case "list_models": {
+      try {
+        const includeDetails = Boolean(args.includeDetails);
+
+        if (includeDetails) {
+          // Get model names and IDs, then get detailed info
+          const modelNamesAndIds = await client.model.modelNamesAndIds();
+          const modelIds = Object.values(modelNamesAndIds);
+          const detailedModels = await client.model.findModelsById({ modelIds });
+
+          const result = detailedModels.map(model => ({
+            id: model.id,
+            name: model.name,
+            type: model.type, // 0=standard, 1=cloze
+            field_count: model.flds.length,
+            template_count: model.tmpls.length,
+            fields: model.flds.map(field => field.name),
+            templates: model.tmpls.map(template => template.name),
+            css_length: model.css.length,
+            modification_time: new Date(model.mod * 1000).toISOString()
+          }));
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify(result)
+            }]
+          };
+        } else {
+          // Just get model names and IDs
+          const modelNamesAndIds = await client.model.modelNamesAndIds();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify(modelNamesAndIds)
+            }]
+          };
+        }
+      } catch (error) {
+        throw new Error(`Failed to list models. Make sure Anki is running. Error: ${error}`);
+      }
+    }
+
+    case "get_model_info": {
+      try {
+        let modelNames: string[];
+        
+        if (args.modelNames && Array.isArray(args.modelNames)) {
+          modelNames = args.modelNames.map(String);
+        } else if (args.modelName) {
+          modelNames = [String(args.modelName)];
+        } else {
+          throw new Error("Either 'modelNames' array or 'modelName' must be provided");
+        }
+
+        if (modelNames.length === 0) {
+          throw new Error("At least one model name must be provided");
+        }
+
+        const detailedModels = await client.model.findModelsByName({ modelNames });
+
+        const result = detailedModels.map(model => ({
+          id: model.id,
+          name: model.name,
+          type: model.type, // 0=standard, 1=cloze
+          modification_time: new Date(model.mod * 1000).toISOString(),
+          fields: model.flds.map(field => ({
+            name: field.name,
+            order: field.ord,
+            sticky: field.sticky,
+            rtl: field.rtl,
+            font: field.font,
+            size: field.size,
+            description: field.description || "",
+            collapsed: field.collapsed,
+            exclude_from_search: field.excludeFromSearch
+          })),
+          templates: model.tmpls.map(template => ({
+            name: template.name,
+            order: template.ord,
+            question_format: template.qfmt,
+            answer_format: template.afmt,
+            browser_question_format: template.bqfmt || "",
+            browser_answer_format: template.bafmt || ""
+          })),
+          css: model.css,
+          latex_pre: model.latexPre,
+          latex_post: model.latexPost,
+          sort_field: model.sortf
+        }));
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify(result)
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to get model information. Make sure Anki is running and model names are correct. Error: ${error}`);
+      }
+    }
+
+    case "get_model_fields": {
+      try {
+        let modelNames: string[];
+        const includeProperties = Boolean(args.includeProperties);
+        
+        if (args.modelNames && Array.isArray(args.modelNames)) {
+          modelNames = args.modelNames.map(String);
+        } else if (args.modelName) {
+          modelNames = [String(args.modelName)];
+        } else {
+          throw new Error("Either 'modelNames' array or 'modelName' must be provided");
+        }
+
+        if (modelNames.length === 0) {
+          throw new Error("At least one model name must be provided");
+        }
+
+        const result = [];
+        for (const modelName of modelNames) {
+          if (includeProperties) {
+            // Get detailed field information
+            const fieldFonts = await client.model.modelFieldFonts({ modelName });
+            const fieldNames = await client.model.modelFieldNames({ modelName });
+
+            const fields = fieldNames.map((name, index) => ({
+              name: name,
+              order: index,
+              font: fieldFonts[name]?.font || "Arial",
+              size: fieldFonts[name]?.size || 20,
+              description: "" // Field descriptions require individual API calls per field
+            }));
+
+            result.push({
+              model_name: modelName,
+              field_count: fieldNames.length,
+              fields: fields
+            });
+          } else {
+            // Just get field names
+            const fieldNames = await client.model.modelFieldNames({ modelName });
+            result.push({
+              model_name: modelName,
+              field_count: fieldNames.length,
+              field_names: fieldNames
+            });
+          }
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify(result)
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to get model fields. Make sure Anki is running and model names are correct. Error: ${error}`);
+      }
+    }
+
+    case "create_model": {
+      try {
+        const modelName = String(args.modelName);
+        const fields = args.fields as string[];
+        const templates = args.templates as Array<{name: string, front: string, back: string}>;
+        const css = args.css ? String(args.css) : undefined;
+        const isCloze = Boolean(args.isCloze);
+
+        if (!modelName || modelName.trim() === '') {
+          throw new Error("Model name cannot be empty");
+        }
+
+        if (!Array.isArray(fields) || fields.length === 0) {
+          throw new Error("Fields array must be provided with at least one field");
+        }
+
+        if (!Array.isArray(templates) || templates.length === 0) {
+          throw new Error("Templates array must be provided with at least one template");
+        }
+
+        // Validate template structure
+        for (const template of templates) {
+          if (!template.name || !template.front || !template.back) {
+            throw new Error("Each template must have 'name', 'front', and 'back' properties");
+          }
+        }
+
+        // Check if model already exists
+        try {
+          const existingModels = await client.model.modelNames();
+          if (existingModels.includes(modelName)) {
+            throw new Error(`Model '${modelName}' already exists. Choose a different name.`);
+          }
+        } catch (error) {
+          // Continue if we can't check existing models
+        }
+
+        // Format templates for the API
+        const formattedTemplates = templates.map(template => ({
+          Name: template.name,
+          Front: template.front,
+          Back: template.back
+        }));
+
+        const modelData = {
+          modelName: modelName,
+          inOrderFields: fields,
+          cardTemplates: formattedTemplates,
+          css: css,
+          isCloze: isCloze
+        };
+
+        const createdModel = await client.model.createModel(modelData);
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              model_name: modelName,
+              model_id: createdModel.id,
+              field_count: fields.length,
+              template_count: templates.length,
+              is_cloze: isCloze,
+              fields: fields,
+              templates: templates.map(t => t.name),
+              message: `Successfully created model '${modelName}' with ${fields.length} fields and ${templates.length} templates`
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to create model. Make sure Anki is running, model name is unique, and template syntax is valid. Error: ${error}`);
+      }
+    }
+
+    case "update_model_templates": {
+      try {
+        const modelName = String(args.modelName);
+        const templates = args.templates as Record<string, any>;
+        const css = args.css ? String(args.css) : undefined;
+
+        if (!modelName || modelName.trim() === '') {
+          throw new Error("Model name cannot be empty");
+        }
+
+        // Check if model exists
+        try {
+          const existingModels = await client.model.modelNames();
+          if (!existingModels.includes(modelName)) {
+            throw new Error(`Model '${modelName}' not found. Available models: ${existingModels.join(', ')}`);
+          }
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('not found')) {
+            throw error;
+          }
+        }
+
+        const updateData: any = {
+          model: {
+            name: modelName
+          }
+        };
+
+        // Update templates if provided
+        if (templates && Object.keys(templates).length > 0) {
+          updateData.model.templates = {};
+          for (const [templateName, templateData] of Object.entries(templates)) {
+            updateData.model.templates[templateName] = {
+              Front: templateData.front || templateData.Front,
+              Back: templateData.back || templateData.Back
+            };
+          }
+          await client.model.updateModelTemplates(updateData);
+        }
+
+        // Update CSS if provided
+        if (css) {
+          const cssUpdateData = {
+            model: {
+              name: modelName,
+              css: css
+            }
+          };
+          await client.model.updateModelStyling(cssUpdateData);
+        }
+
+        const updatedItems = [];
+        if (templates && Object.keys(templates).length > 0) {
+          updatedItems.push(`${Object.keys(templates).length} templates`);
+        }
+        if (css) {
+          updatedItems.push('CSS styling');
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              model_name: modelName,
+              updated_templates: templates ? Object.keys(templates) : [],
+              updated_css: !!css,
+              message: `Successfully updated ${updatedItems.join(' and ')} for model '${modelName}'`
+            })
+          }]
+        };
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('not found')) {
+          throw error;
+        }
+        throw new Error(`Failed to update model templates. Make sure Anki is running, model exists, and template syntax is valid. Error: ${error}`);
       }
     }
 

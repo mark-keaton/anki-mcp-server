@@ -207,6 +207,41 @@ Make sure you have the add-on installed before using.
     - `cardId` (number, optional): Single card ID (alternative to cardIds array)
     - `includeHistory` (boolean, optional): Include complete interval history for each card
 
+### Model/Template Management
+- **list_models**
+  - Get all note types/models in the collection with optional detailed information
+  - Inputs:
+    - `includeDetails` (boolean, optional): Include detailed model information including fields and templates
+
+- **get_model_info**
+  - Get comprehensive information about specific models including fields, templates, and styling
+  - Inputs:
+    - `modelNames` (array, optional): Array of model names to get information for
+    - `modelName` (string, optional): Single model name (alternative to modelNames array)
+
+- **get_model_fields**
+  - Get field definitions and properties for specific models
+  - Inputs:
+    - `modelNames` (array, optional): Array of model names to get field information for
+    - `modelName` (string, optional): Single model name (alternative to modelNames array)
+    - `includeProperties` (boolean, optional): Include detailed field properties like fonts and sizes
+
+- **create_model**
+  - Create a new note type with custom fields and templates. Supports both basic and cloze deletion models.
+  - Inputs:
+    - `modelName` (string): Name for the new model (must be unique)
+    - `fields` (array): Array of field names for the model
+    - `templates` (array): Array of card templates with name, front, and back properties
+    - `css` (string, optional): CSS styling for the model
+    - `isCloze` (boolean, optional): Create as cloze deletion model
+
+- **update_model_templates**
+  - Update card templates and styling for existing models
+  - Inputs:
+    - `modelName` (string): Name of the model to update
+    - `templates` (object, optional): Templates to update with template names as keys
+    - `css` (string, optional): New CSS styling for the model
+
 ## Development
 
 Install dependencies:
