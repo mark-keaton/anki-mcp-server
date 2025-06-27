@@ -18,6 +18,8 @@ Make sure you have the add-on installed before using.
   - Equivalent of `is:new` in Anki
 
 ## Tools
+
+### Card Management
 - **update_cards**
   - Marks cards with given card IDs as answered and gives them an ease score between 1 (Again) and 4 (Easy)
   - Inputs:
@@ -38,6 +40,36 @@ Make sure you have the add-on installed before using.
   - Returns n number of cards from new
   - Inputs:
     - `num` (number): Number of cards
+
+### Deck Management
+- **list_decks**
+  - Get all deck names, optionally with IDs and basic statistics
+  - Inputs:
+    - `includeIds` (boolean, optional): Include deck IDs in the response
+    - `includeStats` (boolean, optional): Include basic statistics (new, learning, review counts)
+
+- **get_deck_info**
+  - Get detailed information about a specific deck including statistics
+  - Inputs:
+    - `deckName` (string): Name of the deck to get information for
+    - `includeStats` (boolean, optional): Include detailed statistics for the deck
+
+- **get_deck_stats**
+  - Get comprehensive statistics for one or more decks
+  - Inputs:
+    - `deckNames` (array, optional): Array of deck names to get statistics for
+    - `deckName` (string, optional): Single deck name (alternative to deckNames array)
+
+- **create_deck**
+  - Create a new deck. Supports nested decks using '::' separator (e.g., 'Japanese::JLPT N5')
+  - Inputs:
+    - `deckName` (string): Name of the deck to create. Use '::' for nested decks (e.g., 'Parent::Child')
+
+- **delete_deck**
+  - Delete a deck and all its cards. Requires explicit confirmation for safety.
+  - Inputs:
+    - `deckName` (string): Name of the deck to delete
+    - `confirmDelete` (boolean): Must be set to true to confirm deletion (safety check)
 
 ## Development
 

@@ -215,13 +215,100 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ["num"]
         },
+      },
+      {
+        name: "list_decks",
+        description: "Get all deck names, optionally with IDs and basic statistics",
+        inputSchema: {
+          type: "object",
+          properties: {
+            includeIds: {
+              type: "boolean",
+              description: "Include deck IDs in the response"
+            },
+            includeStats: {
+              type: "boolean",
+              description: "Include basic statistics (new, learning, review counts)"
+            }
+          }
+        }
+      },
+      {
+        name: "get_deck_info",
+        description: "Get detailed information about a specific deck including statistics",
+        inputSchema: {
+          type: "object",
+          properties: {
+            deckName: {
+              type: "string",
+              description: "Name of the deck to get information for"
+            },
+            includeStats: {
+              type: "boolean",
+              description: "Include detailed statistics for the deck"
+            }
+          },
+          required: ["deckName"]
+        }
+      },
+      {
+        name: "get_deck_stats",
+        description: "Get comprehensive statistics for one or more decks",
+        inputSchema: {
+          type: "object",
+          properties: {
+            deckNames: {
+              type: "array",
+              items: {
+                type: "string"
+              },
+              description: "Array of deck names to get statistics for"
+            },
+            deckName: {
+              type: "string",
+              description: "Single deck name (alternative to deckNames array)"
+            }
+          }
+        }
+      },
+      {
+        name: "create_deck",
+        description: "Create a new deck. Supports nested decks using '::' separator (e.g., 'Japanese::JLPT N5')",
+        inputSchema: {
+          type: "object",
+          properties: {
+            deckName: {
+              type: "string",
+              description: "Name of the deck to create. Use '::' for nested decks (e.g., 'Parent::Child')"
+            }
+          },
+          required: ["deckName"]
+        }
+      },
+      {
+        name: "delete_deck",
+        description: "Delete a deck and all its cards. Requires explicit confirmation for safety.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            deckName: {
+              type: "string",
+              description: "Name of the deck to delete"
+            },
+            confirmDelete: {
+              type: "boolean",
+              description: "Must be set to true to confirm deletion (safety check)"
+            }
+          },
+          required: ["deckName", "confirmDelete"]
+        }
       }
     ]
   };
 });
 
 /**
- * Handler for the update_cards, add_card, get_due_cards and get_new_cards tools.
+ * Handler for all MCP tools including card management, deck management, and statistics.
  */
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
@@ -303,6 +390,207 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           text: JSON.stringify(cards.slice(0, num))
         }]
       };
+    }
+
+    case "list_decks": {
+      try {
+        const includeIds = Boolean(args.includeIds);
+        const includeStats = Boolean(args.includeStats);
+
+        if (includeStats) {
+          // Get deck names first, then get stats for all decks
+          const deckNames = await client.deck.deckNames();
+          const deckStats = await client.deck.getDeckStats({ decks: deckNames });
+          
+          const result = Object.values(deckStats).map(stat => ({
+            name: stat.name,
+            deck_id: stat.deck_id,
+            new_count: stat.new_count,
+            learn_count: stat.learn_count,
+            review_count: stat.review_count,
+            total_in_deck: stat.total_in_deck
+          }));
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify(result)
+            }]
+          };
+        } else if (includeIds) {
+          const deckNamesAndIds = await client.deck.deckNamesAndIds();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify(deckNamesAndIds)
+            }]
+          };
+        } else {
+          const deckNames = await client.deck.deckNames();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify(deckNames)
+            }]
+          };
+        }
+      } catch (error) {
+        throw new Error(`Failed to list decks. Make sure Anki is running and AnkiConnect is installed. Error: ${error}`);
+      }
+    }
+
+    case "get_deck_info": {
+      try {
+        const deckName = String(args.deckName);
+        const includeStats = Boolean(args.includeStats);
+
+        // First check if deck exists by getting all deck names
+        const allDecks = await client.deck.deckNamesAndIds();
+        if (!(deckName in allDecks)) {
+          throw new Error(`Deck '${deckName}' not found. Available decks: ${Object.keys(allDecks).join(', ')}`);
+        }
+
+        const result: any = {
+          name: deckName,
+          deck_id: allDecks[deckName]
+        };
+
+        if (includeStats) {
+          const deckStats = await client.deck.getDeckStats({ decks: [deckName] });
+          const stats = Object.values(deckStats)[0];
+          if (stats) {
+            result.new_count = stats.new_count;
+            result.learn_count = stats.learn_count;
+            result.review_count = stats.review_count;
+            result.total_in_deck = stats.total_in_deck;
+          }
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify(result)
+          }]
+        };
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('not found')) {
+          throw error;
+        }
+        throw new Error(`Failed to get deck info. Make sure Anki is running and the deck name is correct. Error: ${error}`);
+      }
+    }
+
+    case "get_deck_stats": {
+      try {
+        let deckNames: string[];
+        
+        if (args.deckNames && Array.isArray(args.deckNames)) {
+          deckNames = args.deckNames.map(String);
+        } else if (args.deckName) {
+          deckNames = [String(args.deckName)];
+        } else {
+          throw new Error("Either 'deckNames' array or 'deckName' string must be provided");
+        }
+
+        const deckStats = await client.deck.getDeckStats({ decks: deckNames });
+        
+        // Convert to a more readable format
+        const result = Object.values(deckStats).map(stat => ({
+          name: stat.name,
+          deck_id: stat.deck_id,
+          new_count: stat.new_count,
+          learn_count: stat.learn_count,
+          review_count: stat.review_count,
+          total_in_deck: stat.total_in_deck
+        }));
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify(result)
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to get deck statistics. Make sure Anki is running and deck names are correct. Error: ${error}`);
+      }
+    }
+
+    case "create_deck": {
+      try {
+        const deckName = String(args.deckName);
+        
+        if (!deckName || deckName.trim() === '') {
+          throw new Error("Deck name cannot be empty");
+        }
+
+        // Validate deck name format for nested decks
+        if (deckName.includes('::')) {
+          const parts = deckName.split('::');
+          for (const part of parts) {
+            if (part.trim() === '') {
+              throw new Error("Invalid deck name format. Each part separated by '::' must be non-empty. Example: 'Parent::Child'");
+            }
+          }
+        }
+
+        const deckId = await client.deck.createDeck({ deck: deckName });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              deck_name: deckName,
+              deck_id: deckId,
+              message: `Successfully created deck '${deckName}'`
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to create deck. Make sure Anki is running and the deck name is valid. Use '::' for nested decks (e.g., 'Parent::Child'). Error: ${error}`);
+      }
+    }
+
+    case "delete_deck": {
+      try {
+        const deckName = String(args.deckName);
+        const confirmDelete = Boolean(args.confirmDelete);
+
+        if (!confirmDelete) {
+          throw new Error("Deletion requires confirmDelete: true to prevent accidental deletions. This action cannot be undone!");
+        }
+
+        // Check if deck exists first
+        const allDecks = await client.deck.deckNamesAndIds();
+        if (!(deckName in allDecks)) {
+          throw new Error(`Deck '${deckName}' not found. Available decks: ${Object.keys(allDecks).join(', ')}`);
+        }
+
+        // Get deck stats to show what will be deleted
+        const deckStats = await client.deck.getDeckStats({ decks: [deckName] });
+        const stats = Object.values(deckStats)[0];
+        const totalCards = stats ? stats.total_in_deck : 0;
+
+        // Delete the deck (cardsToo must be true)
+        await client.deck.deleteDecks({ decks: [deckName], cardsToo: true });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              deck_name: deckName,
+              cards_deleted: totalCards,
+              message: `Successfully deleted deck '${deckName}' and ${totalCards} cards`
+            })
+          }]
+        };
+      } catch (error) {
+        if (error instanceof Error && (error.message.includes('not found') || error.message.includes('confirmDelete'))) {
+          throw error;
+        }
+        throw new Error(`Failed to delete deck. Make sure Anki is running and the deck exists. Error: ${error}`);
+      }
     }
 
     default:
