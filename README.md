@@ -104,6 +104,60 @@ Make sure you have the add-on installed before using.
     - `deckName` (string, optional): Specific deck to analyze (optional, analyzes all decks if not provided)
     - `days` (number, optional): Number of days to analyze (default: 30)
 
+### Note Management
+- **find_notes**
+  - Search for notes using advanced filters and queries (e.g., 'deck:Japanese tag:grammar', 'front:*kanji*')
+  - Inputs:
+    - `query` (string): Search query using Anki search syntax
+    - `limit` (number, optional): Maximum number of results to return (default: 100, max: 1000)
+
+- **get_note_info_detailed**
+  - Get comprehensive information about specific notes including all fields, tags, and associated cards
+  - Inputs:
+    - `noteIds` (array, optional): Array of note IDs to get information for
+    - `noteId` (number, optional): Single note ID (alternative to noteIds array)
+
+- **update_note_fields**
+  - Update fields in existing notes. Preserves HTML formatting and card scheduling.
+  - Inputs:
+    - `noteIds` (array, optional): Array of note IDs to update
+    - `noteId` (number, optional): Single note ID (alternative to noteIds array)
+    - `fields` (object): Object with field names as keys and new values as values
+
+- **delete_notes**
+  - Delete notes and all associated cards. Requires explicit confirmation for safety.
+  - Inputs:
+    - `noteIds` (array, optional): Array of note IDs to delete
+    - `noteId` (number, optional): Single note ID (alternative to noteIds array)
+    - `confirmDelete` (boolean): Must be set to true to confirm deletion (safety check)
+
+- **add_tags_to_notes**
+  - Add tags to existing notes. Creates new tags automatically if they don't exist.
+  - Inputs:
+    - `noteIds` (array, optional): Array of note IDs to add tags to
+    - `noteId` (number, optional): Single note ID (alternative to noteIds array)
+    - `tags` (array): Array of tags to add
+
+- **remove_tags_from_notes**
+  - Remove specific tags from notes. Does not delete the tags entirely, just removes them from specified notes.
+  - Inputs:
+    - `noteIds` (array, optional): Array of note IDs to remove tags from
+    - `noteId` (number, optional): Single note ID (alternative to noteIds array)
+    - `tags` (array): Array of tags to remove
+
+- **get_all_tags**
+  - Get all tags in the collection with optional usage statistics
+  - Inputs:
+    - `includeUsage` (boolean, optional): Include count of how many notes use each tag
+
+- **duplicate_note**
+  - Create a copy of an existing note, optionally modifying fields and changing deck
+  - Inputs:
+    - `noteId` (number): ID of the note to duplicate
+    - `targetDeck` (string, optional): Deck to create the duplicate in
+    - `fieldUpdates` (object, optional): Fields to modify in the duplicate
+    - `additionalTags` (array, optional): Additional tags to add to the duplicate
+
 ## Development
 
 Install dependencies:

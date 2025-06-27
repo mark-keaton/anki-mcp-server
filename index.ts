@@ -394,13 +394,199 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             }
           }
         }
+      },
+      {
+        name: "find_notes",
+        description: "Search for notes using advanced filters and queries (e.g., 'deck:Japanese tag:grammar', 'front:*kanji*')",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "Search query using Anki search syntax (e.g., 'deck:Japanese tag:grammar', 'note:Basic created:7')"
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of results to return (default: 100, max: 1000)"
+            }
+          },
+          required: ["query"]
+        }
+      },
+      {
+        name: "get_note_info_detailed",
+        description: "Get comprehensive information about specific notes including all fields, tags, and associated cards",
+        inputSchema: {
+          type: "object",
+          properties: {
+            noteIds: {
+              type: "array",
+              items: {
+                type: "number"
+              },
+              description: "Array of note IDs to get information for"
+            },
+            noteId: {
+              type: "number",
+              description: "Single note ID (alternative to noteIds array)"
+            }
+          }
+        }
+      },
+      {
+        name: "update_note_fields",
+        description: "Update fields in existing notes. Preserves HTML formatting and card scheduling.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            noteIds: {
+              type: "array",
+              items: {
+                type: "number"
+              },
+              description: "Array of note IDs to update"
+            },
+            noteId: {
+              type: "number",
+              description: "Single note ID (alternative to noteIds array)"
+            },
+            fields: {
+              type: "object",
+              description: "Object with field names as keys and new values as values (e.g., {'Front': 'new front', 'Back': 'new back'})"
+            }
+          },
+          required: ["fields"]
+        }
+      },
+      {
+        name: "delete_notes",
+        description: "Delete notes and all associated cards. Requires explicit confirmation for safety.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            noteIds: {
+              type: "array",
+              items: {
+                type: "number"
+              },
+              description: "Array of note IDs to delete"
+            },
+            noteId: {
+              type: "number",
+              description: "Single note ID (alternative to noteIds array)"
+            },
+            confirmDelete: {
+              type: "boolean",
+              description: "Must be set to true to confirm deletion (safety check)"
+            }
+          },
+          required: ["confirmDelete"]
+        }
+      },
+      {
+        name: "add_tags_to_notes",
+        description: "Add tags to existing notes. Creates new tags automatically if they don't exist.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            noteIds: {
+              type: "array",
+              items: {
+                type: "number"
+              },
+              description: "Array of note IDs to add tags to"
+            },
+            noteId: {
+              type: "number",
+              description: "Single note ID (alternative to noteIds array)"
+            },
+            tags: {
+              type: "array",
+              items: {
+                type: "string"
+              },
+              description: "Array of tags to add (e.g., ['grammar', 'difficult', 'review'])"
+            }
+          },
+          required: ["tags"]
+        }
+      },
+      {
+        name: "remove_tags_from_notes",
+        description: "Remove specific tags from notes. Does not delete the tags entirely, just removes them from specified notes.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            noteIds: {
+              type: "array",
+              items: {
+                type: "number"
+              },
+              description: "Array of note IDs to remove tags from"
+            },
+            noteId: {
+              type: "number",
+              description: "Single note ID (alternative to noteIds array)"
+            },
+            tags: {
+              type: "array",
+              items: {
+                type: "string"
+              },
+              description: "Array of tags to remove (e.g., ['old', 'deprecated'])"
+            }
+          },
+          required: ["tags"]
+        }
+      },
+      {
+        name: "get_all_tags",
+        description: "Get all tags in the collection with optional usage statistics",
+        inputSchema: {
+          type: "object",
+          properties: {
+            includeUsage: {
+              type: "boolean",
+              description: "Include count of how many notes use each tag"
+            }
+          }
+        }
+      },
+      {
+        name: "duplicate_note",
+        description: "Create a copy of an existing note, optionally modifying fields and changing deck",
+        inputSchema: {
+          type: "object",
+          properties: {
+            noteId: {
+              type: "number",
+              description: "ID of the note to duplicate"
+            },
+            targetDeck: {
+              type: "string",
+              description: "Deck to create the duplicate in (optional, uses original deck if not specified)"
+            },
+            fieldUpdates: {
+              type: "object",
+              description: "Fields to modify in the duplicate (optional, e.g., {'Front': 'modified front'})"
+            },
+            additionalTags: {
+              type: "array",
+              items: {
+                type: "string"
+              },
+              description: "Additional tags to add to the duplicate (optional)"
+            }
+          },
+          required: ["noteId"]
+        }
       }
     ]
   };
 });
 
 /**
- * Handler for all MCP tools including card management, deck management, and statistics.
+ * Handler for all MCP tools including card management, deck management, statistics, and note management.
  */
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
@@ -956,6 +1142,364 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       } catch (error) {
         throw new Error(`Failed to get learning statistics. Make sure Anki is running and deck name is correct (if provided). Error: ${error}`);
+      }
+    }
+
+    case "find_notes": {
+      try {
+        const query = String(args.query);
+        const limit = Math.min(Number(args.limit) || 100, 1000); // Default 100, max 1000
+
+        if (!query || query.trim() === '') {
+          throw new Error("Query cannot be empty. Use Anki search syntax like 'deck:Japanese tag:grammar' or 'front:*kanji*'");
+        }
+
+        const noteIds = await client.note.findNotes({ query });
+        
+        // Limit results for performance
+        const limitedNoteIds = noteIds.slice(0, limit);
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              query,
+              total_found: noteIds.length,
+              returned_count: limitedNoteIds.length,
+              note_ids: limitedNoteIds,
+              truncated: noteIds.length > limit
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to find notes. Make sure Anki is running and query syntax is correct. Examples: 'deck:Japanese', 'tag:grammar', 'front:*word*'. Error: ${error}`);
+      }
+    }
+
+    case "get_note_info_detailed": {
+      try {
+        let noteIds: number[];
+        
+        if (args.noteIds && Array.isArray(args.noteIds)) {
+          noteIds = args.noteIds.map(Number);
+        } else if (args.noteId) {
+          noteIds = [Number(args.noteId)];
+        } else {
+          throw new Error("Either 'noteIds' array or 'noteId' must be provided");
+        }
+
+        if (noteIds.length === 0) {
+          throw new Error("At least one note ID must be provided");
+        }
+
+        const notesInfo = await client.note.notesInfo({ notes: noteIds });
+
+        const result = notesInfo.map(note => ({
+          note_id: note.noteId,
+          model_name: note.modelName,
+          tags: note.tags,
+          fields: note.fields,
+          cards: note.cards,
+          modification_time: note.mod ? new Date(note.mod * 1000).toISOString() : null,
+          profile: note.profile || null
+        }));
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify(result)
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to get note information. Make sure Anki is running and note IDs are valid. Error: ${error}`);
+      }
+    }
+
+    case "update_note_fields": {
+      try {
+        let noteIds: number[];
+        
+        if (args.noteIds && Array.isArray(args.noteIds)) {
+          noteIds = args.noteIds.map(Number);
+        } else if (args.noteId) {
+          noteIds = [Number(args.noteId)];
+        } else {
+          throw new Error("Either 'noteIds' array or 'noteId' must be provided");
+        }
+
+        const fields = args.fields as Record<string, string>;
+        if (!fields || Object.keys(fields).length === 0) {
+          throw new Error("Fields object must be provided with at least one field to update");
+        }
+
+        const results = [];
+        for (const noteId of noteIds) {
+          try {
+            await client.note.updateNoteFields({
+              note: {
+                id: noteId,
+                fields: fields
+              }
+            });
+            results.push({ note_id: noteId, success: true });
+          } catch (error) {
+            results.push({ note_id: noteId, success: false, error: String(error) });
+          }
+        }
+
+        const successCount = results.filter(r => r.success).length;
+        const failureCount = results.length - successCount;
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              total_notes: noteIds.length,
+              successful_updates: successCount,
+              failed_updates: failureCount,
+              updated_fields: Object.keys(fields),
+              results: results
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to update note fields. Make sure Anki is running, note IDs are valid, and field names exist in the note type. Error: ${error}`);
+      }
+    }
+
+    case "delete_notes": {
+      try {
+        let noteIds: number[];
+        const confirmDelete = Boolean(args.confirmDelete);
+
+        if (!confirmDelete) {
+          throw new Error("Deletion requires confirmDelete: true to prevent accidental deletions. This action cannot be undone!");
+        }
+        
+        if (args.noteIds && Array.isArray(args.noteIds)) {
+          noteIds = args.noteIds.map(Number);
+        } else if (args.noteId) {
+          noteIds = [Number(args.noteId)];
+        } else {
+          throw new Error("Either 'noteIds' array or 'noteId' must be provided");
+        }
+
+        if (noteIds.length === 0) {
+          throw new Error("At least one note ID must be provided");
+        }
+
+        // Get note info before deletion to show what will be deleted
+        const notesInfo = await client.note.notesInfo({ notes: noteIds });
+        const totalCards = notesInfo.reduce((sum, note) => sum + note.cards.length, 0);
+
+        // Delete the notes
+        await client.note.deleteNotes({ notes: noteIds });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              deleted_notes: noteIds.length,
+              deleted_cards: totalCards,
+              note_ids: noteIds,
+              message: `Successfully deleted ${noteIds.length} notes and ${totalCards} associated cards`
+            })
+          }]
+        };
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('confirmDelete')) {
+          throw error;
+        }
+        throw new Error(`Failed to delete notes. Make sure Anki is running and note IDs are valid. Error: ${error}`);
+      }
+    }
+
+    case "add_tags_to_notes": {
+      try {
+        let noteIds: number[];
+        
+        if (args.noteIds && Array.isArray(args.noteIds)) {
+          noteIds = args.noteIds.map(Number);
+        } else if (args.noteId) {
+          noteIds = [Number(args.noteId)];
+        } else {
+          throw new Error("Either 'noteIds' array or 'noteId' must be provided");
+        }
+
+        const tags = args.tags as string[];
+        if (!Array.isArray(tags) || tags.length === 0) {
+          throw new Error("Tags array must be provided with at least one tag");
+        }
+
+        // Join tags into a space-separated string as required by the API
+        const tagsString = tags.join(' ');
+
+        await client.note.addTags({ notes: noteIds, tags: tagsString });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              notes_updated: noteIds.length,
+              tags_added: tags,
+              note_ids: noteIds,
+              message: `Successfully added tags [${tags.join(', ')}] to ${noteIds.length} notes`
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to add tags to notes. Make sure Anki is running and note IDs are valid. Error: ${error}`);
+      }
+    }
+
+    case "remove_tags_from_notes": {
+      try {
+        let noteIds: number[];
+        
+        if (args.noteIds && Array.isArray(args.noteIds)) {
+          noteIds = args.noteIds.map(Number);
+        } else if (args.noteId) {
+          noteIds = [Number(args.noteId)];
+        } else {
+          throw new Error("Either 'noteIds' array or 'noteId' must be provided");
+        }
+
+        const tags = args.tags as string[];
+        if (!Array.isArray(tags) || tags.length === 0) {
+          throw new Error("Tags array must be provided with at least one tag");
+        }
+
+        // Join tags into a space-separated string as required by the API
+        const tagsString = tags.join(' ');
+
+        await client.note.removeTags({ notes: noteIds, tags: tagsString });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              notes_updated: noteIds.length,
+              tags_removed: tags,
+              note_ids: noteIds,
+              message: `Successfully removed tags [${tags.join(', ')}] from ${noteIds.length} notes`
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to remove tags from notes. Make sure Anki is running and note IDs are valid. Error: ${error}`);
+      }
+    }
+
+    case "get_all_tags": {
+      try {
+        const includeUsage = Boolean(args.includeUsage);
+
+        const allTags = await client.note.getTags();
+
+        if (includeUsage) {
+          // For each tag, count how many notes use it
+          const tagUsage = [];
+          for (const tag of allTags) {
+            try {
+              const noteIds = await client.note.findNotes({ query: `tag:"${tag}"` });
+              tagUsage.push({
+                tag: tag,
+                note_count: noteIds.length
+              });
+            } catch (error) {
+              // If there's an error with a specific tag, include it with 0 count
+              tagUsage.push({
+                tag: tag,
+                note_count: 0,
+                error: String(error)
+              });
+            }
+          }
+
+          // Sort by usage count (descending)
+          tagUsage.sort((a, b) => b.note_count - a.note_count);
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                total_tags: allTags.length,
+                tags_with_usage: tagUsage
+              })
+            }]
+          };
+        } else {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                total_tags: allTags.length,
+                tags: allTags.sort()
+              })
+            }]
+          };
+        }
+      } catch (error) {
+        throw new Error(`Failed to get tags. Make sure Anki is running. Error: ${error}`);
+      }
+    }
+
+    case "duplicate_note": {
+      try {
+        const noteId = Number(args.noteId);
+        const targetDeck = args.targetDeck ? String(args.targetDeck) : null;
+        const fieldUpdates = args.fieldUpdates as Record<string, string> || {};
+        const additionalTags = args.additionalTags as string[] || [];
+
+        // Get the original note information
+        const originalNotes = await client.note.notesInfo({ notes: [noteId] });
+        if (originalNotes.length === 0) {
+          throw new Error(`Note with ID ${noteId} not found`);
+        }
+
+        const originalNote = originalNotes[0];
+
+        // Prepare the new note data
+        const newFields: Record<string, string> = {};
+        for (const [fieldName, fieldData] of Object.entries(originalNote.fields)) {
+          // Use updated value if provided, otherwise use original
+          newFields[fieldName] = fieldUpdates[fieldName] || fieldData.value;
+        }
+
+        // Combine original tags with additional tags
+        const allTags = [...originalNote.tags, ...additionalTags];
+
+        // Create the duplicate note
+        const newNote = {
+          note: {
+            deckName: targetDeck || 'Default', // Use target deck or Default
+            modelName: originalNote.modelName,
+            fields: newFields,
+            tags: allTags
+          }
+        };
+
+        const newNoteId = await client.note.addNote(newNote);
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              original_note_id: noteId,
+              new_note_id: newNoteId,
+              target_deck: targetDeck || 'Default',
+              fields_updated: Object.keys(fieldUpdates),
+              additional_tags: additionalTags,
+              message: `Successfully duplicated note ${noteId} to new note ${newNoteId}`
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to duplicate note. Make sure Anki is running, note ID is valid, and target deck exists (if specified). Error: ${error}`);
       }
     }
 
