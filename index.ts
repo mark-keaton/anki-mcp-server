@@ -302,6 +302,98 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ["deckName", "confirmDelete"]
         }
+      },
+      {
+        name: "get_collection_stats",
+        description: "Get comprehensive statistics about your entire Anki collection",
+        inputSchema: {
+          type: "object",
+          properties: {
+            includeHTML: {
+              type: "boolean",
+              description: "Include raw HTML stats report from Anki"
+            }
+          }
+        }
+      },
+      {
+        name: "get_cards_reviewed_today",
+        description: "Get the number of cards reviewed today",
+        inputSchema: {
+          type: "object",
+          properties: {}
+        }
+      },
+      {
+        name: "get_review_history",
+        description: "Get historical review data over a specified period",
+        inputSchema: {
+          type: "object",
+          properties: {
+            days: {
+              type: "number",
+              description: "Number of days to look back (default: 30, max: 365)"
+            }
+          }
+        }
+      },
+      {
+        name: "get_card_reviews",
+        description: "Get detailed review history for specific cards",
+        inputSchema: {
+          type: "object",
+          properties: {
+            cardIds: {
+              type: "array",
+              items: {
+                type: "number"
+              },
+              description: "Array of card IDs to get review history for"
+            }
+          },
+          required: ["cardIds"]
+        }
+      },
+      {
+        name: "get_deck_performance",
+        description: "Get performance analytics for specific decks including success rates and timing",
+        inputSchema: {
+          type: "object",
+          properties: {
+            deckNames: {
+              type: "array",
+              items: {
+                type: "string"
+              },
+              description: "Array of deck names to analyze"
+            },
+            deckName: {
+              type: "string",
+              description: "Single deck name (alternative to deckNames array)"
+            },
+            days: {
+              type: "number",
+              description: "Number of days to analyze (default: 30)"
+            }
+          }
+        }
+      },
+      {
+        name: "get_learning_stats",
+        description: "Get learning progress analytics including graduation rates and retention",
+        inputSchema: {
+          type: "object",
+          properties: {
+            deckName: {
+              type: "string",
+              description: "Specific deck to analyze (optional, analyzes all decks if not provided)"
+            },
+            days: {
+              type: "number",
+              description: "Number of days to analyze (default: 30)"
+            }
+          }
+        }
       }
     ]
   };
@@ -590,6 +682,280 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw error;
         }
         throw new Error(`Failed to delete deck. Make sure Anki is running and the deck exists. Error: ${error}`);
+      }
+    }
+
+    case "get_collection_stats": {
+      try {
+        const includeHTML = Boolean(args.includeHTML);
+
+        // Get basic collection statistics
+        const deckNames = await client.deck.deckNames();
+        const allDeckStats = await client.deck.getDeckStats({ decks: deckNames });
+        
+        // Calculate totals across all decks
+        const totalStats = Object.values(allDeckStats).reduce((acc, deck) => ({
+          total_decks: acc.total_decks + 1,
+          total_cards: acc.total_cards + deck.total_in_deck,
+          new_cards: acc.new_cards + deck.new_count,
+          learning_cards: acc.learning_cards + deck.learn_count,
+          review_cards: acc.review_cards + deck.review_count
+        }), { total_decks: 0, total_cards: 0, new_cards: 0, learning_cards: 0, review_cards: 0 });
+
+        // Get cards reviewed today
+        const reviewedToday = await client.statistic.getNumCardsReviewedToday();
+
+        const result: any = {
+          collection_summary: {
+            total_decks: totalStats.total_decks,
+            total_cards: totalStats.total_cards,
+            new_cards: totalStats.new_cards,
+            learning_cards: totalStats.learning_cards,
+            review_cards: totalStats.review_cards,
+            cards_reviewed_today: reviewedToday
+          },
+          deck_breakdown: Object.values(allDeckStats).map(deck => ({
+            name: deck.name,
+            total_cards: deck.total_in_deck,
+            new_count: deck.new_count,
+            learn_count: deck.learn_count,
+            review_count: deck.review_count
+          }))
+        };
+
+        if (includeHTML) {
+          const htmlStats = await client.statistic.getCollectionStatsHTML({ wholeCollection: true });
+          result.html_report = htmlStats;
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify(result)
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to get collection statistics. Make sure Anki is running. Error: ${error}`);
+      }
+    }
+
+    case "get_cards_reviewed_today": {
+      try {
+        const reviewedToday = await client.statistic.getNumCardsReviewedToday();
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              cards_reviewed_today: reviewedToday,
+              date: new Date().toISOString().split('T')[0]
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to get cards reviewed today. Make sure Anki is running. Error: ${error}`);
+      }
+    }
+
+    case "get_review_history": {
+      try {
+        const days = Math.min(Number(args.days) || 30, 365); // Default 30 days, max 365
+
+        const reviewHistory = await client.statistic.getNumCardsReviewedByDay();
+        
+        // Limit to requested number of days and format the data
+        const limitedHistory = reviewHistory.slice(0, days).map(([date, count]) => ({
+          date,
+          cards_reviewed: count
+        }));
+
+        // Calculate some summary statistics
+        const totalReviews = limitedHistory.reduce((sum, day) => sum + day.cards_reviewed, 0);
+        const averagePerDay = totalReviews / limitedHistory.length;
+        const maxDay = limitedHistory.reduce((max, day) => 
+          day.cards_reviewed > max.cards_reviewed ? day : max, limitedHistory[0] || { date: '', cards_reviewed: 0 });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              period_days: days,
+              total_reviews: totalReviews,
+              average_per_day: Math.round(averagePerDay * 100) / 100,
+              max_day: maxDay,
+              daily_history: limitedHistory
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to get review history. Make sure Anki is running. Error: ${error}`);
+      }
+    }
+
+    case "get_card_reviews": {
+      try {
+        const cardIds = args.cardIds as number[];
+        
+        if (!Array.isArray(cardIds) || cardIds.length === 0) {
+          throw new Error("cardIds must be a non-empty array of card IDs");
+        }
+
+        // Convert to strings as required by the API
+        const cardIdStrings = cardIds.map(id => String(id));
+        const reviewsData = await client.statistic.getReviewsOfCards({ cards: cardIdStrings });
+
+        // Format the response to be more readable
+        const result = Object.entries(reviewsData).map(([cardId, reviews]) => ({
+          card_id: Number(cardId),
+          review_count: reviews.length,
+          reviews: reviews.map(review => ({
+            review_time: new Date(review.id).toISOString(),
+            ease: review.ease,
+            interval_days: review.ivl,
+            previous_interval_days: review.lastIvl,
+            ease_factor: review.factor,
+            time_taken_ms: review.time,
+            review_type: review.type // 0=learning, 1=review, 2=relearn, 3=filtered
+          }))
+        }));
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify(result)
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to get card reviews. Make sure Anki is running and card IDs are valid. Error: ${error}`);
+      }
+    }
+
+    case "get_deck_performance": {
+      try {
+        let deckNames: string[];
+        const days = Number(args.days) || 30;
+        
+        if (args.deckNames && Array.isArray(args.deckNames)) {
+          deckNames = args.deckNames.map(String);
+        } else if (args.deckName) {
+          deckNames = [String(args.deckName)];
+        } else {
+          // If no specific decks provided, analyze all decks
+          deckNames = await client.deck.deckNames();
+        }
+
+        // Get current deck statistics
+        const deckStats = await client.deck.getDeckStats({ decks: deckNames });
+        
+        // Get review history for analysis
+        const reviewHistory = await client.statistic.getNumCardsReviewedByDay();
+        const recentHistory = reviewHistory.slice(0, days);
+        const totalRecentReviews = recentHistory.reduce((sum, [, count]) => sum + count, 0);
+
+        const result = Object.values(deckStats).map(deck => {
+          const totalCards = deck.total_in_deck;
+          const dueCards = deck.new_count + deck.learn_count + deck.review_count;
+          const completedCards = totalCards - dueCards;
+          const completionRate = totalCards > 0 ? (completedCards / totalCards) * 100 : 0;
+
+          return {
+            deck_name: deck.name,
+            deck_id: deck.deck_id,
+            total_cards: totalCards,
+            completed_cards: completedCards,
+            due_cards: dueCards,
+            completion_rate_percent: Math.round(completionRate * 100) / 100,
+            card_distribution: {
+              new: deck.new_count,
+              learning: deck.learn_count,
+              review: deck.review_count
+            },
+            analysis_period_days: days
+          };
+        });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              analysis_period_days: days,
+              total_recent_reviews: totalRecentReviews,
+              deck_performance: result
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to get deck performance. Make sure Anki is running and deck names are correct. Error: ${error}`);
+      }
+    }
+
+    case "get_learning_stats": {
+      try {
+        const days = Number(args.days) || 30;
+        const deckName = args.deckName ? String(args.deckName) : null;
+
+        // Get deck statistics
+        let deckNames: string[];
+        if (deckName) {
+          deckNames = [deckName];
+        } else {
+          deckNames = await client.deck.deckNames();
+        }
+
+        const deckStats = await client.deck.getDeckStats({ decks: deckNames });
+        
+        // Get review history for trend analysis
+        const reviewHistory = await client.statistic.getNumCardsReviewedByDay();
+        const recentHistory = reviewHistory.slice(0, days);
+        
+        // Calculate learning statistics
+        const totalStats = Object.values(deckStats).reduce((acc, deck) => ({
+          total_cards: acc.total_cards + deck.total_in_deck,
+          new_cards: acc.new_cards + deck.new_count,
+          learning_cards: acc.learning_cards + deck.learn_count,
+          review_cards: acc.review_cards + deck.review_count
+        }), { total_cards: 0, new_cards: 0, learning_cards: 0, review_cards: 0 });
+
+        const matureCards = totalStats.total_cards - totalStats.new_cards - totalStats.learning_cards;
+        const maturityRate = totalStats.total_cards > 0 ? (matureCards / totalStats.total_cards) * 100 : 0;
+        
+        // Calculate recent activity
+        const totalRecentReviews = recentHistory.reduce((sum, [, count]) => sum + count, 0);
+        const averageReviewsPerDay = totalRecentReviews / Math.min(days, recentHistory.length);
+
+        const result = {
+          analysis_period_days: days,
+          scope: deckName || "All decks",
+          learning_progress: {
+            total_cards: totalStats.total_cards,
+            mature_cards: matureCards,
+            learning_cards: totalStats.learning_cards,
+            new_cards: totalStats.new_cards,
+            maturity_rate_percent: Math.round(maturityRate * 100) / 100
+          },
+          recent_activity: {
+            total_reviews: totalRecentReviews,
+            average_reviews_per_day: Math.round(averageReviewsPerDay * 100) / 100,
+            most_active_day: recentHistory.reduce((max, [date, count]) => 
+              count > max.count ? { date, count } : max, { date: '', count: 0 })
+          },
+          deck_breakdown: deckName ? undefined : Object.values(deckStats).map(deck => ({
+            name: deck.name,
+            total_cards: deck.total_in_deck,
+            new_count: deck.new_count,
+            learn_count: deck.learn_count,
+            review_count: deck.review_count
+          }))
+        };
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify(result)
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to get learning statistics. Make sure Anki is running and deck name is correct (if provided). Error: ${error}`);
       }
     }
 

@@ -71,6 +71,39 @@ Make sure you have the add-on installed before using.
     - `deckName` (string): Name of the deck to delete
     - `confirmDelete` (boolean): Must be set to true to confirm deletion (safety check)
 
+### Statistics & Analytics
+- **get_collection_stats**
+  - Get comprehensive statistics about your entire Anki collection
+  - Inputs:
+    - `includeHTML` (boolean, optional): Include raw HTML stats report from Anki
+
+- **get_cards_reviewed_today**
+  - Get the number of cards reviewed today
+  - Inputs: None
+
+- **get_review_history**
+  - Get historical review data over a specified period
+  - Inputs:
+    - `days` (number, optional): Number of days to look back (default: 30, max: 365)
+
+- **get_card_reviews**
+  - Get detailed review history for specific cards
+  - Inputs:
+    - `cardIds` (array): Array of card IDs to get review history for
+
+- **get_deck_performance**
+  - Get performance analytics for specific decks including success rates and timing
+  - Inputs:
+    - `deckNames` (array, optional): Array of deck names to analyze
+    - `deckName` (string, optional): Single deck name (alternative to deckNames array)
+    - `days` (number, optional): Number of days to analyze (default: 30)
+
+- **get_learning_stats**
+  - Get learning progress analytics including graduation rates and retention
+  - Inputs:
+    - `deckName` (string, optional): Specific deck to analyze (optional, analyzes all decks if not provided)
+    - `days` (number, optional): Number of days to analyze (default: 30)
+
 ## Development
 
 Install dependencies:
