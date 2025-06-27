@@ -878,6 +878,79 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ["modelName"]
         }
+      },
+      {
+        name: "get_profiles",
+        description: "Get all available Anki profiles on the system",
+        inputSchema: {
+          type: "object",
+          properties: {}
+        }
+      },
+      {
+        name: "get_active_profile",
+        description: "Get information about the currently active Anki profile",
+        inputSchema: {
+          type: "object",
+          properties: {}
+        }
+      },
+      {
+        name: "switch_profile",
+        description: "Switch to a different Anki profile. This will change the active profile and reload the collection.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            profileName: {
+              type: "string",
+              description: "Name of the profile to switch to"
+            }
+          },
+          required: ["profileName"]
+        }
+      },
+      {
+        name: "sync_collection",
+        description: "Sync the collection with AnkiWeb. Requires AnkiWeb account setup in Anki.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            forceSync: {
+              type: "boolean",
+              description: "Force sync even if no changes detected (default: false)"
+            }
+          }
+        }
+      },
+      {
+        name: "export_deck",
+        description: "Export a deck to an .apkg file for backup or sharing",
+        inputSchema: {
+          type: "object",
+          properties: {
+            deckName: {
+              type: "string",
+              description: "Name of the deck to export"
+            },
+            filePath: {
+              type: "string",
+              description: "Path where to save the .apkg file (should end with .apkg)"
+            },
+            includeScheduling: {
+              type: "boolean",
+              description: "Include scheduling information in export (default: true)"
+            }
+          },
+          required: ["deckName", "filePath"]
+        }
+      },
+      {
+        name: "reload_collection",
+        description: "Reload the collection to refresh data after external changes",
+        inputSchema: {
+          type: "object",
+          properties: {}
+        }
       }
     ]
   };
@@ -2438,6 +2511,181 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw error;
         }
         throw new Error(`Failed to update model templates. Make sure Anki is running, model exists, and template syntax is valid. Error: ${error}`);
+      }
+    }
+
+    case "get_profiles": {
+      try {
+        const profiles = await client.miscellaneous.getProfiles();
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              profiles: profiles,
+              profile_count: profiles.length
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to get profiles. Make sure Anki is running. Error: ${error}`);
+      }
+    }
+
+    case "get_active_profile": {
+      try {
+        const activeProfile = await client.miscellaneous.getActiveProfile();
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              active_profile: activeProfile,
+              timestamp: new Date().toISOString()
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to get active profile. Make sure Anki is running. Error: ${error}`);
+      }
+    }
+
+    case "switch_profile": {
+      try {
+        const profileName = String(args.profileName);
+
+        if (!profileName || profileName.trim() === '') {
+          throw new Error("Profile name cannot be empty");
+        }
+
+        // Check if profile exists
+        const availableProfiles = await client.miscellaneous.getProfiles();
+        if (!availableProfiles.includes(profileName)) {
+          throw new Error(`Profile '${profileName}' not found. Available profiles: ${availableProfiles.join(', ')}`);
+        }
+
+        // Get current profile before switching
+        const currentProfile = await client.miscellaneous.getActiveProfile();
+
+        // Switch to the new profile
+        await client.miscellaneous.loadProfile({ name: profileName });
+
+        // Verify the switch was successful
+        const newActiveProfile = await client.miscellaneous.getActiveProfile();
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              previous_profile: currentProfile,
+              new_profile: newActiveProfile,
+              profile_switched: newActiveProfile === profileName,
+              message: `Successfully switched from '${currentProfile}' to '${newActiveProfile}'`
+            })
+          }]
+        };
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('not found')) {
+          throw error;
+        }
+        throw new Error(`Failed to switch profile. Make sure Anki is running and profile name is correct. Error: ${error}`);
+      }
+    }
+
+    case "sync_collection": {
+      try {
+        const forceSync = Boolean(args.forceSync);
+
+        // Perform the sync
+        const syncResult = await client.miscellaneous.sync();
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              sync_result: syncResult,
+              force_sync: forceSync,
+              timestamp: new Date().toISOString(),
+              message: "Collection sync completed successfully"
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to sync collection. Make sure Anki is running, you're logged into AnkiWeb, and have an internet connection. Error: ${error}`);
+      }
+    }
+
+    case "export_deck": {
+      try {
+        const deckName = String(args.deckName);
+        const filePath = String(args.filePath);
+        const includeScheduling = args.includeScheduling !== false; // Default to true
+
+        if (!deckName || deckName.trim() === '') {
+          throw new Error("Deck name cannot be empty");
+        }
+
+        if (!filePath || filePath.trim() === '') {
+          throw new Error("File path cannot be empty");
+        }
+
+        // Validate file extension
+        if (!filePath.toLowerCase().endsWith('.apkg')) {
+          throw new Error("File path must end with .apkg extension");
+        }
+
+        // Check if deck exists
+        const allDecks = await client.deck.deckNamesAndIds();
+        if (!(deckName in allDecks)) {
+          throw new Error(`Deck '${deckName}' not found. Available decks: ${Object.keys(allDecks).join(', ')}`);
+        }
+
+        // Export the deck
+        const exportResult = await client.miscellaneous.exportPackage({
+          deck: deckName,
+          path: filePath,
+          includeSched: includeScheduling
+        });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              deck_name: deckName,
+              file_path: filePath,
+              include_scheduling: includeScheduling,
+              export_result: exportResult,
+              message: `Successfully exported deck '${deckName}' to '${filePath}'`
+            })
+          }]
+        };
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('not found')) {
+          throw error;
+        }
+        throw new Error(`Failed to export deck. Make sure Anki is running, deck exists, and file path is valid. Error: ${error}`);
+      }
+    }
+
+    case "reload_collection": {
+      try {
+        await client.miscellaneous.reloadCollection();
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              timestamp: new Date().toISOString(),
+              message: "Collection reloaded successfully"
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to reload collection. Make sure Anki is running. Error: ${error}`);
       }
     }
 

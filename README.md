@@ -242,6 +242,36 @@ Make sure you have the add-on installed before using.
     - `templates` (object, optional): Templates to update with template names as keys
     - `css` (string, optional): New CSS styling for the model
 
+### System & Utility
+- **get_profiles**
+  - Get all available Anki profiles on the system
+  - Inputs: None
+
+- **get_active_profile**
+  - Get information about the currently active Anki profile
+  - Inputs: None
+
+- **switch_profile**
+  - Switch to a different Anki profile. This will change the active profile and reload the collection.
+  - Inputs:
+    - `profileName` (string): Name of the profile to switch to
+
+- **sync_collection**
+  - Sync the collection with AnkiWeb. Requires AnkiWeb account setup in Anki.
+  - Inputs:
+    - `forceSync` (boolean, optional): Force sync even if no changes detected
+
+- **export_deck**
+  - Export a deck to an .apkg file for backup or sharing
+  - Inputs:
+    - `deckName` (string): Name of the deck to export
+    - `filePath` (string): Path where to save the .apkg file (should end with .apkg)
+    - `includeScheduling` (boolean, optional): Include scheduling information in export
+
+- **reload_collection**
+  - Reload the collection to refresh data after external changes
+  - Inputs: None
+
 ## Development
 
 Install dependencies:
