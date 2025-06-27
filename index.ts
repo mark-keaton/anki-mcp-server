@@ -580,6 +580,174 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ["noteId"]
         }
+      },
+      {
+        name: "find_cards_advanced",
+        description: "Search for cards using advanced filters including ease factors, intervals, and scheduling (e.g., 'deck:Japanese prop:ease<2.0', 'is:due prop:ivl>30')",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "Advanced search query using Anki search syntax with properties (e.g., 'deck:Japanese prop:ease<2.0', 'is:review prop:ivl>30')"
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of results to return (default: 100, max: 1000)"
+            }
+          },
+          required: ["query"]
+        }
+      },
+      {
+        name: "get_card_info_detailed",
+        description: "Get comprehensive information about specific cards including ease factors, intervals, lapses, and scheduling details",
+        inputSchema: {
+          type: "object",
+          properties: {
+            cardIds: {
+              type: "array",
+              items: {
+                type: "number"
+              },
+              description: "Array of card IDs to get detailed information for"
+            },
+            cardId: {
+              type: "number",
+              description: "Single card ID (alternative to cardIds array)"
+            }
+          }
+        }
+      },
+      {
+        name: "suspend_cards",
+        description: "Suspend or unsuspend cards to control their review scheduling. Suspended cards won't appear in reviews.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            cardIds: {
+              type: "array",
+              items: {
+                type: "number"
+              },
+              description: "Array of card IDs to suspend or unsuspend"
+            },
+            cardId: {
+              type: "number",
+              description: "Single card ID (alternative to cardIds array)"
+            },
+            suspend: {
+              type: "boolean",
+              description: "true to suspend cards, false to unsuspend cards"
+            }
+          },
+          required: ["suspend"]
+        }
+      },
+      {
+        name: "set_card_due_date",
+        description: "Reschedule cards to specific due dates. Useful for managing review timing and catching up on overdue cards.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            cardIds: {
+              type: "array",
+              items: {
+                type: "number"
+              },
+              description: "Array of card IDs to reschedule"
+            },
+            cardId: {
+              type: "number",
+              description: "Single card ID (alternative to cardIds array)"
+            },
+            days: {
+              type: "string",
+              description: "Due date specification: '0' = today, '1' = tomorrow, '3-7' = random 3-7 days, or specific number of days"
+            }
+          },
+          required: ["days"]
+        }
+      },
+      {
+        name: "forget_cards",
+        description: "Reset card progress to 'new' status, removing all review history. Requires explicit confirmation for safety.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            cardIds: {
+              type: "array",
+              items: {
+                type: "number"
+              },
+              description: "Array of card IDs to reset"
+            },
+            cardId: {
+              type: "number",
+              description: "Single card ID (alternative to cardIds array)"
+            },
+            confirmReset: {
+              type: "boolean",
+              description: "Must be set to true to confirm resetting card progress (safety check)"
+            }
+          },
+          required: ["confirmReset"]
+        }
+      },
+      {
+        name: "set_card_ease_factors",
+        description: "Adjust ease factors for cards to make them easier or harder. Higher ease = longer intervals.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            cardIds: {
+              type: "array",
+              items: {
+                type: "number"
+              },
+              description: "Array of card IDs to adjust"
+            },
+            cardId: {
+              type: "number",
+              description: "Single card ID (alternative to cardIds array)"
+            },
+            easeFactors: {
+              type: "array",
+              items: {
+                type: "number"
+              },
+              description: "Array of ease factors (one per card, typically 1300-4000, default ~2500)"
+            },
+            easeFactor: {
+              type: "number",
+              description: "Single ease factor to apply to all cards (alternative to easeFactors array)"
+            }
+          }
+        }
+      },
+      {
+        name: "get_card_intervals",
+        description: "Get interval information for cards including current intervals and historical progression",
+        inputSchema: {
+          type: "object",
+          properties: {
+            cardIds: {
+              type: "array",
+              items: {
+                type: "number"
+              },
+              description: "Array of card IDs to analyze"
+            },
+            cardId: {
+              type: "number",
+              description: "Single card ID (alternative to cardIds array)"
+            },
+            includeHistory: {
+              type: "boolean",
+              description: "Include complete interval history for each card (default: false)"
+            }
+          }
+        }
       }
     ]
   };
@@ -1500,6 +1668,331 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       } catch (error) {
         throw new Error(`Failed to duplicate note. Make sure Anki is running, note ID is valid, and target deck exists (if specified). Error: ${error}`);
+      }
+    }
+
+    case "find_cards_advanced": {
+      try {
+        const query = String(args.query);
+        const limit = Math.min(Number(args.limit) || 100, 1000); // Default 100, max 1000
+
+        if (!query || query.trim() === '') {
+          throw new Error("Query cannot be empty. Use advanced Anki search syntax like 'deck:Japanese prop:ease<2.0' or 'is:due prop:ivl>30'");
+        }
+
+        const cardIds = await client.card.findCards({ query });
+        
+        // Limit results for performance
+        const limitedCardIds = cardIds.slice(0, limit);
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              query,
+              total_found: cardIds.length,
+              returned_count: limitedCardIds.length,
+              card_ids: limitedCardIds,
+              truncated: cardIds.length > limit
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to find cards. Make sure Anki is running and query syntax is correct. Examples: 'deck:Japanese prop:ease<2.0', 'is:review prop:ivl>30', 'is:suspended'. Error: ${error}`);
+      }
+    }
+
+    case "get_card_info_detailed": {
+      try {
+        let cardIds: number[];
+        
+        if (args.cardIds && Array.isArray(args.cardIds)) {
+          cardIds = args.cardIds.map(Number);
+        } else if (args.cardId) {
+          cardIds = [Number(args.cardId)];
+        } else {
+          throw new Error("Either 'cardIds' array or 'cardId' must be provided");
+        }
+
+        if (cardIds.length === 0) {
+          throw new Error("At least one card ID must be provided");
+        }
+
+        const cardsInfo = await client.card.cardsInfo({ cards: cardIds });
+
+        const result = cardsInfo.map(card => ({
+          card_id: card.cardId,
+          note_id: card.note,
+          deck_name: card.deckName,
+          model_name: card.modelName,
+          question: cleanWithRegex(card.question),
+          answer: cleanWithRegex(card.answer),
+          fields: card.fields,
+          ease_factor: (card as any).factor || null,
+          interval_days: card.interval,
+          due_date: card.due,
+          card_type: card.type, // 0=new, 1=learning, 2=review
+          queue: card.queue, // -1=suspended, 0=new, 1=learning, 2=review, 3=day learning
+          lapses: card.lapses,
+          reviews: card.reps,
+          remaining_steps: card.left,
+          modification_time: card.mod ? new Date(card.mod * 1000).toISOString() : null,
+          css: card.css
+        }));
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify(result)
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to get detailed card information. Make sure Anki is running and card IDs are valid. Error: ${error}`);
+      }
+    }
+
+    case "suspend_cards": {
+      try {
+        let cardIds: number[];
+        const suspend = Boolean(args.suspend);
+        
+        if (args.cardIds && Array.isArray(args.cardIds)) {
+          cardIds = args.cardIds.map(Number);
+        } else if (args.cardId) {
+          cardIds = [Number(args.cardId)];
+        } else {
+          throw new Error("Either 'cardIds' array or 'cardId' must be provided");
+        }
+
+        if (cardIds.length === 0) {
+          throw new Error("At least one card ID must be provided");
+        }
+
+        let result;
+        if (suspend) {
+          result = await client.card.suspend({ cards: cardIds });
+        } else {
+          result = await client.card.unsuspend({ cards: cardIds });
+        }
+
+        const action = suspend ? 'suspended' : 'unsuspended';
+        const successCount = Array.isArray(result) ? result.filter(Boolean).length : (result ? cardIds.length : 0);
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              action: action,
+              cards_affected: successCount,
+              total_cards: cardIds.length,
+              card_ids: cardIds,
+              message: `Successfully ${action} ${successCount} out of ${cardIds.length} cards`
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to suspend/unsuspend cards. Make sure Anki is running and card IDs are valid. Error: ${error}`);
+      }
+    }
+
+    case "set_card_due_date": {
+      try {
+        let cardIds: number[];
+        const days = String(args.days);
+        
+        if (args.cardIds && Array.isArray(args.cardIds)) {
+          cardIds = args.cardIds.map(Number);
+        } else if (args.cardId) {
+          cardIds = [Number(args.cardId)];
+        } else {
+          throw new Error("Either 'cardIds' array or 'cardId' must be provided");
+        }
+
+        if (cardIds.length === 0) {
+          throw new Error("At least one card ID must be provided");
+        }
+
+        const result = await client.card.setDueDate({ cards: cardIds, days: days });
+
+        const successCount = Array.isArray(result) ? result.filter(Boolean).length : (result ? cardIds.length : 0);
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              cards_rescheduled: successCount,
+              total_cards: cardIds.length,
+              due_date_spec: days,
+              card_ids: cardIds,
+              message: `Successfully rescheduled ${successCount} out of ${cardIds.length} cards to be due in ${days} days`
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to set card due dates. Make sure Anki is running, card IDs are valid, and days format is correct (e.g., '0', '1', '3-7'). Error: ${error}`);
+      }
+    }
+
+    case "forget_cards": {
+      try {
+        let cardIds: number[];
+        const confirmReset = Boolean(args.confirmReset);
+
+        if (!confirmReset) {
+          throw new Error("Reset requires confirmReset: true to prevent accidental progress loss. This action cannot be undone!");
+        }
+        
+        if (args.cardIds && Array.isArray(args.cardIds)) {
+          cardIds = args.cardIds.map(Number);
+        } else if (args.cardId) {
+          cardIds = [Number(args.cardId)];
+        } else {
+          throw new Error("Either 'cardIds' array or 'cardId' must be provided");
+        }
+
+        if (cardIds.length === 0) {
+          throw new Error("At least one card ID must be provided");
+        }
+
+        // Get card info before resetting to show what will be affected
+        const cardsInfo = await client.card.cardsInfo({ cards: cardIds });
+        const reviewCounts = cardsInfo.map(card => card.reps || 0);
+        const totalReviews = reviewCounts.reduce((sum, count) => sum + count, 0);
+
+        await client.card.forgetCards({ cards: cardIds });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              cards_reset: cardIds.length,
+              total_reviews_lost: totalReviews,
+              card_ids: cardIds,
+              message: `Successfully reset ${cardIds.length} cards to 'new' status, removing ${totalReviews} total reviews`
+            })
+          }]
+        };
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('confirmReset')) {
+          throw error;
+        }
+        throw new Error(`Failed to forget cards. Make sure Anki is running and card IDs are valid. Error: ${error}`);
+      }
+    }
+
+    case "set_card_ease_factors": {
+      try {
+        let cardIds: number[];
+        let easeFactors: number[];
+        
+        if (args.cardIds && Array.isArray(args.cardIds)) {
+          cardIds = args.cardIds.map(Number);
+        } else if (args.cardId) {
+          cardIds = [Number(args.cardId)];
+        } else {
+          throw new Error("Either 'cardIds' array or 'cardId' must be provided");
+        }
+
+        if (cardIds.length === 0) {
+          throw new Error("At least one card ID must be provided");
+        }
+
+        // Handle ease factors
+        if (args.easeFactors && Array.isArray(args.easeFactors)) {
+          easeFactors = args.easeFactors.map(Number);
+          if (easeFactors.length !== cardIds.length) {
+            throw new Error("Number of ease factors must match number of card IDs");
+          }
+        } else if (args.easeFactor) {
+          const singleEase = Number(args.easeFactor);
+          easeFactors = new Array(cardIds.length).fill(singleEase);
+        } else {
+          throw new Error("Either 'easeFactors' array or 'easeFactor' must be provided");
+        }
+
+        // Validate ease factors (typical range 1300-4000)
+        for (const ease of easeFactors) {
+          if (ease < 1300 || ease > 4000) {
+            throw new Error(`Ease factor ${ease} is outside typical range (1300-4000). Use with caution.`);
+          }
+        }
+
+        const result = await client.card.setEaseFactors({ cards: cardIds, easeFactors: easeFactors });
+
+        const successCount = Array.isArray(result) ? result.filter(Boolean).length : (result ? cardIds.length : 0);
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              cards_updated: successCount,
+              total_cards: cardIds.length,
+              ease_factors: easeFactors,
+              card_ids: cardIds,
+              message: `Successfully updated ease factors for ${successCount} out of ${cardIds.length} cards`
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to set card ease factors. Make sure Anki is running, card IDs are valid, and ease factors are in reasonable range (1300-4000). Error: ${error}`);
+      }
+    }
+
+    case "get_card_intervals": {
+      try {
+        let cardIds: number[];
+        const includeHistory = Boolean(args.includeHistory);
+        
+        if (args.cardIds && Array.isArray(args.cardIds)) {
+          cardIds = args.cardIds.map(Number);
+        } else if (args.cardId) {
+          cardIds = [Number(args.cardId)];
+        } else {
+          throw new Error("Either 'cardIds' array or 'cardId' must be provided");
+        }
+
+        if (cardIds.length === 0) {
+          throw new Error("At least one card ID must be provided");
+        }
+
+        const intervals = await client.card.getIntervals({ cards: cardIds, complete: includeHistory });
+
+        let result;
+        if (includeHistory) {
+          // intervals is a 2D array with complete history
+          const intervalsArray = intervals as number[][];
+          result = cardIds.map((cardId, index) => ({
+            card_id: cardId,
+            current_interval: intervalsArray[index] ? intervalsArray[index][intervalsArray[index].length - 1] : null,
+            interval_history: intervalsArray[index] || [],
+            total_intervals: intervalsArray[index] ? intervalsArray[index].length : 0
+          }));
+        } else {
+          // intervals is a 1D array with just current intervals
+          const intervalsArray = intervals as number[];
+          result = cardIds.map((cardId, index) => ({
+            card_id: cardId,
+            current_interval: intervalsArray[index] || null,
+            interval_days: intervalsArray[index] > 0 ? intervalsArray[index] : null,
+            interval_seconds: intervalsArray[index] < 0 ? Math.abs(intervalsArray[index]) : null
+          }));
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              include_history: includeHistory,
+              card_intervals: result
+            })
+          }]
+        };
+      } catch (error) {
+        throw new Error(`Failed to get card intervals. Make sure Anki is running and card IDs are valid. Error: ${error}`);
       }
     }
 

@@ -158,6 +158,55 @@ Make sure you have the add-on installed before using.
     - `fieldUpdates` (object, optional): Fields to modify in the duplicate
     - `additionalTags` (array, optional): Additional tags to add to the duplicate
 
+### Advanced Card Management
+- **find_cards_advanced**
+  - Search for cards using advanced filters including ease factors, intervals, and scheduling
+  - Inputs:
+    - `query` (string): Advanced search query using Anki search syntax with properties
+    - `limit` (number, optional): Maximum number of results to return (default: 100, max: 1000)
+
+- **get_card_info_detailed**
+  - Get comprehensive information about specific cards including ease factors, intervals, lapses, and scheduling details
+  - Inputs:
+    - `cardIds` (array, optional): Array of card IDs to get detailed information for
+    - `cardId` (number, optional): Single card ID (alternative to cardIds array)
+
+- **suspend_cards**
+  - Suspend or unsuspend cards to control their review scheduling. Suspended cards won't appear in reviews.
+  - Inputs:
+    - `cardIds` (array, optional): Array of card IDs to suspend or unsuspend
+    - `cardId` (number, optional): Single card ID (alternative to cardIds array)
+    - `suspend` (boolean): true to suspend cards, false to unsuspend cards
+
+- **set_card_due_date**
+  - Reschedule cards to specific due dates. Useful for managing review timing and catching up on overdue cards.
+  - Inputs:
+    - `cardIds` (array, optional): Array of card IDs to reschedule
+    - `cardId` (number, optional): Single card ID (alternative to cardIds array)
+    - `days` (string): Due date specification ('0' = today, '1' = tomorrow, '3-7' = random 3-7 days)
+
+- **forget_cards**
+  - Reset card progress to 'new' status, removing all review history. Requires explicit confirmation for safety.
+  - Inputs:
+    - `cardIds` (array, optional): Array of card IDs to reset
+    - `cardId` (number, optional): Single card ID (alternative to cardIds array)
+    - `confirmReset` (boolean): Must be set to true to confirm resetting card progress (safety check)
+
+- **set_card_ease_factors**
+  - Adjust ease factors for cards to make them easier or harder. Higher ease = longer intervals.
+  - Inputs:
+    - `cardIds` (array, optional): Array of card IDs to adjust
+    - `cardId` (number, optional): Single card ID (alternative to cardIds array)
+    - `easeFactors` (array, optional): Array of ease factors (one per card, typically 1300-4000)
+    - `easeFactor` (number, optional): Single ease factor to apply to all cards
+
+- **get_card_intervals**
+  - Get interval information for cards including current intervals and historical progression
+  - Inputs:
+    - `cardIds` (array, optional): Array of card IDs to analyze
+    - `cardId` (number, optional): Single card ID (alternative to cardIds array)
+    - `includeHistory` (boolean, optional): Include complete interval history for each card
+
 ## Development
 
 Install dependencies:
