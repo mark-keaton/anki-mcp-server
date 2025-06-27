@@ -31,6 +31,15 @@ Make sure you have the add-on installed before using.
     - `front` (string): Front of card
     - `back` (string): Back of card
 
+- **add_notes_batch**
+  - Create multiple notes/cards in a single efficient operation. Ideal for bulk content creation, imports, and automated card generation.
+  - Inputs:
+    - `notes` (array): Array of note objects to create, each with:
+      - `deckName` (string, optional): Name of the deck to create the note in (default: 'Default')
+      - `modelName` (string, optional): Name of the note type/model to use (default: 'Basic')
+      - `fields` (object): Object with field names as keys and content as values
+      - `tags` (array, optional): Array of tags to add to the note
+
 - **get_due_cards**
   - Returns n number of cards currently due for review
   - Inputs:
